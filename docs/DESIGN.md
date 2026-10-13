@@ -40,7 +40,7 @@ Non-goals: Weir is not a general-purpose language, not an interactive shell, and
 2. **Make the common mistake unrepresentable first, detectable second, and a runtime failure third.** Each rule in this document is tagged by which of the three it relies on where that matters.
 3. **Failure is loud by default.** Tolerating failure is an explicit act.
 4. **Nothing prompts unless asked.** A script that works at a terminal must behave identically under cron.
-5. **Effects are declared.** What a script may read, write and execute is visible from its header, and a caller can bound it.
+5. **Effects are declared, and honestly bounded.** What a script's own code may read and write, and which programs it may start, is visible from its header, and a caller can bound it. What a started program does is outside Weir's control.
 6. **Error messages are the product.** See [section 19](#19-open-questions-and-known-weaknesses).
 
 ## 2. Execution Model
@@ -284,29 +284,90 @@ Built-in error types: `ExecError`, `CapabilityError`, `IoError`, `ParseError`, `
 
 ## 7. Capabilities
 
-### 7.1 Filesystem capabilities are declared
+**What this section does and does not guarantee.** Weir can only enforce a read or write scope on operations Weir itself performs: its built-ins such as `read_text`, `write`, `copy`, `move` and `delete`. An external program started through a `filter` or `run` runs with the full authority of the user, and may read or write anywhere that user can. Weir does not confine it, and v1 has no mechanism that does. The capability model therefore bounds the script's own code and records what the author intended. It is not a sandbox.
 
-A flow declares what it reads and writes with `needs read` and `needs write`. Paths may use inputs: `needs write dir`. A built-in that touches the filesystem outside the declared scope throws `CapabilityError` (exit 4), and the checker rejects it statically when it can prove the violation.
+### 7.1 Filesystem scope is declared and enforced at runtime
+
+A flow declares what its built-ins may read and write with `needs read` and `needs write`. Paths may use inputs: `needs write dir`.
+
+The enforcement point is the interpreter, at the moment a built-in is called, after every string and path expression has been evaluated to a concrete, normalised path (`..` resolved, symlinks resolved against the real filesystem). A built-in that touches a path outside the evaluated scope throws `CapabilityError` (exit 4). This is the guarantee. Because paths are computed from inputs, string operations and `/` joins, nothing short of evaluation can say where an operation will land.
+
+`weir check` also reports a violation when it can prove one without evaluating anything (a literal path outside a literal scope). That is a convenience for earlier feedback. A flow that passes `weir check` can still raise `CapabilityError` at runtime, and the checker never claims otherwise.
+
+### 7.1.1 What a declared scope does not cover
+
+`needs write blocklist` says nothing about what `nginx`, `tar`, `rsync` or any other program does once it is started. A filter that wraps `tar -xzf archive -C dest` can write anywhere `tar` can. The scope also does not check which paths are passed to a program in its argument list. Two consequences follow:
+
+- `run(cmd: "rm", args: ["-rf", dir])` bypasses every protection in [section 7.4](#74-destructive-built-ins). The checker warns when a literal `cmd` or `program` names a well-known destructive or mutating tool (`rm`, `mv`, `dd`, `chmod`, `chown`, `mkfs`, `shred`, `truncate`) and suggests the built-in (`W-DESTRUCTIVE-PROGRAM`). It is a lint, not a barrier.
+- A `finally` or `confirmable` step that runs an external program is not made safe by the flow's `needs` clauses.
+
+Confinement of external programs is a future facility and is not in v1. The intended direction is a filesystem jail built from the declared scope, described in [section 7.6](#76-future-filesystem-jails-for-external-programs). A lighter option, a `touches` declaration on filter `in path` parameters so that argument paths are checked against scope before the program is spawned, covers only paths passed explicitly and would still miss paths the program chooses itself. See also [section 19](#19-open-questions-and-known-weaknesses).
 
 ### 7.2 Executable capabilities are inferred
 
-The set of executables a flow may run is computed from its call graph: the `program` of each filter it reaches, and the literal `cmd` of each `run`. A dynamic `cmd` (computed at runtime) is a check error, which is the reason `program` and `cmd` must be literals.
+The set of executables a flow may run is computed from its call graph: the `program` of each filter it reaches, and the literal `cmd` of each `run`. A dynamic `cmd` (computed at runtime) is a check error, which is the reason `program` and `cmd` must be literals. This is an allow-list of which programs may be started. It says nothing about what a permitted program then does ([section 7.1.1](#711-what-a-declared-scope-does-not-cover)).
 
 **Alternative rejected: requiring an explicit `needs exec` list.** It is redundant with the call graph and goes stale; an inferred set cannot disagree with the code.
 
-**Alternative considered: inferring filesystem capabilities too.** Rejected for v1: paths are frequently computed from inputs, so inference would produce either imprecise (everything) or unsound results. Declaring them is also documentation for the reader and the caller.
+**Alternative considered: inferring filesystem capabilities too.** Rejected: paths are frequently computed from inputs, so inference would produce either imprecise (everything) or unsound results, and inference could never see what an external program does. Declaring them is also documentation for the reader and the caller.
 
 ### 7.3 Intersection
 
-A called component receives the intersection of its own declaration and the caller's grant. A library flow that declares `needs write "/"` cannot exceed what its caller allowed, so importing a component cannot widen a script's reach. The caller's grant is the caller's declaration intersected with anything imposed from the CLI (`--allow-write PATH`, `--deny-exec NAME`).
+A called component receives the intersection of its own declaration and the caller's grant. A library flow that declares `needs write "/"` cannot exceed what its caller allowed through Weir's built-ins, so importing a component cannot widen the script's own filesystem reach. It can still start any permitted executable, and that executable is unconfined. The caller's grant is the caller's declaration intersected with anything imposed from the CLI (`--allow-write PATH`, `--deny-exec NAME`).
 
 ### 7.4 Destructive built-ins
 
-The built-ins `delete` and `move` refuse any path outside the declared write scope, and unconditionally refuse `/` and the user's `$HOME`. This is a backstop for the empty-variable `rm -rf "$DIR/"` case. Because `path` values are never concatenated from strings and an unset input is `absent` rather than empty, most such cases are caught earlier by the type system.
+The built-ins `delete` and `move` refuse any path outside the declared write scope, and unconditionally refuse `/` and the user's `$HOME`. This is a backstop for the empty-variable `rm -rf "$DIR/"` case, and it applies only to the built-ins; an external `rm` is not covered ([section 7.1.1](#711-what-a-declared-scope-does-not-cover)). Because `path` values are never concatenated from strings and an unset input is `absent` rather than empty, most such cases are caught earlier by the type system.
 
 ### 7.5 Not covered
 
-Network access is not a declared capability in v1. It is bounded only indirectly, through which executables may run. This is a known gap ([section 19](#19-open-questions-and-known-weaknesses)).
+Network access is not a declared capability in v1. It is bounded only indirectly, through which executables may run, and that bound is as weak as the filesystem one: a permitted program may open any connection. This is a known gap ([section 19](#19-open-questions-and-known-weaknesses)).
+
+### 7.6 Future: filesystem jails for external programs
+
+Not part of v1. The idea is to run each filter or `run` inside a jail whose filesystem view is assembled from the flow's evaluated `needs` clauses, so that "the program can only touch what the flow declared" becomes true and not just intended.
+
+**Construction.** Start from a minimal root, then union in the allowed paths:
+
+- each `needs read` path is bind-mounted read-only at the same location;
+- each `needs write` path is bind-mounted read-write;
+- the locations of the executables and libraries are unioned in read-only, so the jail has something to run (see below);
+- everything else is absent, so a path outside the scope fails with `ENOENT` inside the program.
+
+**Executable and library paths.** Declared data scope is not enough: a jail with only the `needs` paths cannot start any program. The executable set already inferred in [section 7.2](#72-executable-capabilities-are-inferred) says which programs the flow may start, and each one needs its own paths unioned into the jail, read-only:
+
+- the resolved path of the executable (after following symlinks, and after `PATH` lookup, which the interpreter does itself rather than leaving to the program);
+- the dynamic loader and shared libraries, found by resolving the binary's dependencies, plus anything the program loads later with `dlopen` (NSS modules, locale data, TLS providers), which dependency resolution cannot see;
+- the interpreter named by a `#!` line, when the program is a script, and that interpreter's own libraries;
+- helper programs the tool itself runs. `git` runs `git-*`, `nginx -s reload` signals a pid but `systemctl` talks to a socket, `ssh` may run `ProxyCommand`. These cannot be inferred from the call graph and are the usual cause of a jail "breaking" a tool.
+
+Two approaches, with a trade-off between them:
+
+| Approach | Mounts | Strength | Weakness |
+|----------|--------|----------|----------|
+| Per-file | only the executable and the libraries it resolves to | tightest; the program cannot see other binaries | breaks on `dlopen`, helpers and scripts; needs a per-filter `libs`/`extra_paths` list that authors must maintain |
+| Per-tree | the system directories wholesale (`/usr`, `/lib`, `/bin`, `/etc` subset), read-only | works for almost everything with no author effort | the program can read and execute every installed binary, and can read system configuration |
+
+The likely default is per-tree for the system directories plus per-file for anything outside them (`/opt/vendor/bin/tool`), with a filter option to opt into the stricter mode. Read-only system directories still allow the program to run other installed programs, so this mode narrows what the program can write and read of the user's data, not what it can execute. Narrowing execution is only available in the per-file mode, and is only as good as the filter's declared paths.
+
+The unioned executable and library paths are also not part of the author's `needs` clauses. They are derived by Weir and shown by `weir run --plan`, so the real filesystem view is inspectable and the author does not have to list `/usr/lib` by hand.
+
+**Mechanism.** A plain `chroot(2)` is the simplest form, but it requires root and is not by itself a security boundary: a process with root inside a chroot can escape it. A mount namespace entered with `pivot_root`, usually created through an unprivileged user namespace, gives the same view without root and is the better target (this is what `bwrap` does). On Linux, Landlock restricts a process to a set of paths without building a new root. macOS and the BSDs offer no equivalent set of primitives, so the facility would be platform-specific, and Weir would say so rather than silently run unconfined.
+
+**Overlay for write scopes.** Mounting a write path through overlayfs, with a scratch upper layer, lets the program believe it is writing the real tree while Weir keeps the changes aside. That has two uses:
+
+1. `weir run --plan` could run external programs in an overlay and report the file changes they made, instead of only listing the commands, which would address the biggest weakness of `--plan` ([section 19.5](#195-weaknesses-in-the-design-as-it-stands)).
+2. A flow could commit the overlay only if the step succeeds, giving atomic-or-nothing steps for external tools.
+
+**Costs and open problems.**
+
+- Programs routinely need more than their obvious paths: `/etc/resolv.conf`, `/dev/null`, `/proc`, `/tmp`, locale and certificate stores. A jail that breaks `curl` or `openssl` by default will be disabled by users, so a curated default set is needed and is its own maintenance burden.
+- Programs that talk to a daemon over a socket (`systemctl`, `docker`) need that socket mounted, which punches a hole the filesystem scope cannot describe. The `nginx -s reload` in the log-analysis example is such a case.
+- Overlayfs copy-up of large files, and overlay semantics for deletes, hard links and file locks, can surprise programs.
+- Unprivileged user namespaces are disabled on some hardened systems and in some containers, so the facility must degrade by refusing (exit 4) rather than falling back to unconfined.
+- Network confinement is separate and would need a network namespace or a filter.
+
+**Alternative rejected for v1: shipping a jail now.** It cannot be made reliable across platforms quickly, and a weak jail that appears to give a guarantee is worse than a clear statement that there is none.
 
 ## 8. Calls and Naming
 
@@ -330,7 +391,19 @@ copy(from: a, to: b, overwrite: false)
 
 ## 9. Pipelines
 
-`|` chains stages. A stage is a native stage, a declared filter, or a bare `run` command. A failing stage fails the pipeline, always. There is no `pipefail` switch because there is no mode in which a failure is ignored.
+A pipeline is a chain of stages joined with `.`, in the same method-call style used for chaining in most general-purpose languages. A stage is a native stage, a declared filter, or a `run` command. Weir has no `|` operator. The stage on the left supplies the stage on the right with its input: the output of the previous stage, whether that is a program's stdout, a list, or a stream.
+
+```weir
+journalctl(unit: "sshd").filter(where: ...).take(n: 5)
+```
+
+A failing stage fails the pipeline, always. There is no `pipefail` switch because there is no mode in which a failure is ignored.
+
+**Parsing rules.** `.name(...)` with parentheses is a stage application; `.name` without parentheses is member access (`it.count`, `left.days`). A line that begins with `.` continues the expression on the previous line, so long chains can be laid out one stage per line.
+
+**Why `.` and not `|`.** Programs are never invoked as bare text in Weir: every one is wrapped in a typed `filter` and called with named arguments. Once that is true, `|` no longer means "connect two processes' file descriptors", and it carries bash's associations (and bash's silent-failure semantics). Dot chaining reads like the rest of the language, works identically on a list that is already in memory and on a stream from a program, and is what most programmers and models will expect, so there is less to learn. The cost is that "a stage" and "a method" look the same; the checker resolves the name against native stages and declared filters, and an unknown name is reported with the list of what was in scope.
+
+**Alternative rejected: keeping `|` as well.** Two spellings for one thing mean every example and every lint rule has to handle both, and a model will mix them.
 
 ### 9.1 Native stages
 
@@ -349,11 +422,11 @@ Native stages are generic over element type: they work on text lines and on pars
 
 ```weir
 let top = journalctl(unit: "sshd")
-  | filter(where: contains(text: it, part: "Failed password"))
-  | map(to: ip_of(line: it))
-  | count_by(key: it)
-  | sort_by(key: it.count, order: desc)
-  | take(n: 10)
+  .filter(where: contains(text: it, part: "Failed password"))
+  .map(to: ip_of(line: it))
+  .count_by(key: it)
+  .sort_by(key: it.count, order: desc)
+  .take(n: 10)
 ```
 
 ### 9.2 Failure and early termination
@@ -484,7 +557,7 @@ fn ip_of(line: string) -> string {
 }
 
 fn render_blocklist(ips: list<string>) -> string {
-  let rules = ips | map(to: "deny ${it};")
+  let rules = ips.map(to: "deny ${it};")
   return join(items: rules, with: "\n") + "\n"
 }
 
@@ -504,11 +577,11 @@ main flow ban_noisy_clients {
 
   find_offenders {
     let found = tail(file: log, n: window)
-      | filter(where: status_of(line: it) >= 400)
-      | count_by(key: ip_of(line: it))
-      | filter(where: it.count >= threshold)
-      | sort_by(key: it.count, order: desc)
-      | map(to: it.key)
+      .filter(where: status_of(line: it) >= 400)
+      .count_by(key: ip_of(line: it))
+      .filter(where: it.count >= threshold)
+      .sort_by(key: it.count, order: desc)
+      .map(to: it.key)
     offenders = found
     set banned = offenders
   }
@@ -538,11 +611,11 @@ main flow ban_noisy_clients {
 
 Points worth noting:
 
-- `needs write blocklist` bounds `write` and `copy`. The backup file lands next to the blocklist, so it is within the declared scope only if the declaration covers the parent directory. As written, the checker flags `copy(to: backup)` as outside `needs write blocklist` and suggests `needs write blocklist.parent()`. This is a deliberate sample of the kind of error message the checker must get right.
+- `needs write blocklist` bounds `write` and `copy`. The backup file lands next to the blocklist, so it is within the declared scope only if the declaration covers the parent directory. As written, `blocklist` is an input, so the checker cannot prove the violation. At runtime the interpreter evaluates `backup`, finds it outside `needs write blocklist`, and the `copy` throws `CapabilityError` (exit 4) with a message suggesting `needs write blocklist.parent()`. This is a deliberate sample of the kind of error the runtime must get right. The scope binds only Weir's built-ins: `nginx -t` and `nginx -s reload` can touch whatever `nginx` can, and the scope does not mention them.
 - The inferred executable set is `{tail, nginx, systemctl}`. A caller can see this with `weir list --manifest`.
 - The flow is safe to run from cron. Without `--confirm` it updates the blocklist and validates it, then reports `reload: skipped: unconfirmed`. An operator can follow with `weir run ban_noisy_clients.weir --confirm`, or put `--confirm` in the cron line once they trust it.
 - If `nginx_test()` fails the flow fails with exit 1 and the `.bak` file is left in place. A production version would restore the backup in a `catch`; it is omitted here to keep the example short.
-- `tail ... | filter ... | count_by ...` streams until `count_by`, which buffers one counter per distinct IP, then `sort_by` buffers the resulting (smaller) set. The log itself is never held in memory.
+- `tail(...).filter(...).count_by(...)` streams until `count_by`, which buffers one counter per distinct IP, then `sort_by` buffers the resulting (smaller) set. The log itself is never held in memory.
 
 ## 14. Worked Example: Certificate Expiry Checker
 
@@ -599,7 +672,7 @@ main flow check_certs {
 
   for host in hosts {
     probe as host {
-      let attempt = try (s_client(host: host, port: port) | x509_enddate())
+      let attempt = try s_client(host: host, port: port).x509_enddate()
       if attempt.ok {
         let stamp = after_equals(line: attempt.value)
         let expiry = int(text: epoch_of(stamp: stamp))
@@ -615,8 +688,8 @@ main flow check_certs {
   set results = rows
 
   let bad = rows
-    | filter(where: it.state == "critical" or it.state == "unreachable")
-    | count()
+    .filter(where: it.state == "critical" or it.state == "unreachable")
+    .count()
   if bad > 0 {
     fail message: "${bad} certificate(s) critical or unreachable"
   }
@@ -689,16 +762,19 @@ fail        = "fail" "message" ":" expr ;
 step        = ( call | ident "{" body "}" ) [ "as" expr ] { modifier } ;
 modifier    = "when" expr | "confirmable" ;
 
-expr        = pipeline ;
-pipeline    = ternary { "|" stage } ;
-stage       = call | ident ;                 (* native, filter or run *)
+expr        = postfix ;
+postfix     = primary { "." ident [ "(" [ arg { "," arg } ] ")" ] } ;
+                                             (* with parens: a stage (native, filter or run);
+                                                without: member access.
+                                                A line starting with "." continues the previous one. *)
+primary     = call | ident | literal | "(" expr ")" ;
 call        = [ "try" ] ident "(" [ arg { "," arg } ] ")" ;
 arg         = ident ":" expr | "..." "$" ident ;
 type        = ident [ "<" type { "," type } ">" ] [ "?" ]
             | "{" ident ":" type { "," ident ":" type } "}" ;
 ```
 
-Operator precedence, high to low: member access `.`, unary `not` and `-`, `*` `/` (arithmetic and path join), `+` `-`, comparison, `and`, `or`, `|`.
+Operator precedence, high to low: member access `.`, unary `not` and `-`, `*` `/` (arithmetic and path join), `+` `-`, comparison, `and`, `or`. Chaining with `.` binds tightest, as member access does.
 
 ## 16. Reserved Words
 
@@ -763,6 +839,7 @@ The bet is that these concepts are each individually easy and rarely interact, a
 
 - Parallelism (concurrent steps or `for` iterations).
 - Network capabilities (allowed hosts, ports).
+- Filesystem jails for external programs ([section 7.6](#76-future-filesystem-jails-for-external-programs)): mount namespaces with read-only and read-write bind mounts of the declared scope, overlayfs for write scopes, Landlock where available; and path-parameter checks on filters.
 - Windows support. The v1 design assumes POSIX semantics for signals, locks, and paths.
 - A package index. Components come from paths, GitHub and Artifactory/Nexus only.
 - Interactive use and a REPL.
@@ -774,11 +851,13 @@ The bet is that these concepts are each individually easy and rarely interact, a
 ### 19.5 Weaknesses in the design as it stands
 
 - **`--plan` cannot be complete.** It does not execute commands, so any control flow depending on a command's output cannot be resolved. The plan shows both branches annotated with the condition, which can overstate what will happen. A plan is a conservative superset of effects, not a prediction. Whether this is useful enough in practice is open.
+- **Dot chaining blurs stage and method.** `.filter(...)` could be a native stage, a declared filter of the same name, or a future method on a type. Name resolution order must be fixed (declared filters shadowing natives is probably wrong) and the error for an unknown name must list candidates.
 - **Pipeline early termination.** Distinguishing "closed by `take`" from a real failure across platforms and programs is delicate. Some programs report a broken pipe with a distinct code, some with a message, some hang. This may need a per-filter declaration.
 - **`confirmable` semantics for dependent steps.** If a later step depends on the skipped step's effect, running it is wrong. The current rule only skips the one step. A `needs_step` dependency or a rule that skips all later steps in the flow is needed.
 - **`fn` purity versus reading the clock.** `now_epoch()` is not allowed in a `fn`, so time-dependent logic must be passed in as an argument. This is correct and mildly annoying.
 - **Secrets in filters.** `env { NAME = token }` is the only route for a secret to a program besides stdin. Some programs accept credentials only on argv. Those cannot be wrapped safely, and the design offers no answer beyond "write a wrapper".
 - **Network is outside the capability model.**
+- **External programs are unconfined.** Read and write scopes bind only Weir's built-ins. A filter can read and write anywhere the user can, so `needs` clauses and the destructive-path refusals say nothing about what `tar`, `nginx` or `rm` do once started. Real confinement needs a filesystem jail ([section 7.6](#76-future-filesystem-jails-for-external-programs)), which is deferred and platform-specific.
 - **Fixtures are under-specified.** Stubbing at the filter level does not test the real program's behaviour, and the fixture language for directory trees is only sketched.
 - **Naming strictness has a cost.** Named-only calls make short scripts noticeably longer than their bash equivalents. This may hurt adoption for one-liners, which are a large share of what bash is used for. A `weir -e` one-liner mode is not designed.
 
@@ -786,7 +865,7 @@ The bet is that these concepts are each individually easy and rarely interact, a
 
 Roughly in order of cost:
 
-1. **Proving a write is inside the declared scope.** Paths are computed from inputs (`dir / name`). A sound check needs symbolic path reasoning: normalising `..`, tracking that a value derives from a `needs` root, and handling symlinks, which static analysis cannot see at all. The practical design is a conservative static check plus a runtime check that is the real guarantee. The static rule will have false positives and the message must say why.
+1. **Proving a write is inside the declared scope.** Paths are computed from inputs and strings (`dir / name`). A sound static proof needs symbolic path reasoning: normalising `..`, tracking that a value derives from a `needs` root, and handling symlinks, which static analysis cannot see at all. The design therefore does not attempt it: scope is decided at runtime on evaluated paths ([section 7.1](#71-filesystem-scope-is-declared-and-enforced-at-runtime)), and the static check reports only violations provable from literals. The cost is that some violations surface at runtime, as exit 4 partway through a run, rather than at check time.
 2. **Capability inference through the call graph** with imports from remote components. It requires computing the manifest of each component without executing it, and it must handle recursion and diamond imports.
 3. **Pipeline element-type inference** through generic stages with `it`. Requires bidirectional inference and good error messages when it fails, which is hard because the error appears far from the cause.
 4. **`secret` flow analysis.** Tracking that no expression derived from a `secret` reaches an argument list, an interpolation, a file write or an output. Has to follow values through `fn` returns and record fields.

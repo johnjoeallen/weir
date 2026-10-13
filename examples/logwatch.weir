@@ -1,0 +1,265 @@
+#!/usr/bin/env weir
+//
+// logwatch.weir: summarise an nginx access log and block abusive clients.
+//
+//   weir run logwatch.weir --log /var/log/nginx/access.log
+//   weir run logwatch.weir --log access.log.1.gz --since 7d --top 20
+//   weir run logwatch.weir block --log access.log --threshold 500
+//   weir run logwatch.weir block --log access.log --plan      // show what would run
+//   weir run logwatch.weir block --log access.log --confirm   // also run confirmable steps
+//
+// A script runs the same way however it is invoked: by a person, by cron, or
+// by CI. Nothing ever prompts. A confirmable step is skipped, and reported as
+// "skipped: unconfirmed", unless the caller passes --confirm.
+//
+// With no flow name, `weir run` runs the `main` flow. Flows that are neither
+// `main` nor `private` can be named on the command line.
+
+use "github:acme/weir-nginx@v1.0.0#parse_access"   // domain parser: a component, not core
+
+// ---------------------------------------------------------------------------
+// Declared filters: each wraps exactly one external program
+// ---------------------------------------------------------------------------
+
+filter cat_file {
+  program "cat"
+  in file: path
+  args ["--", file]                 // -- stops a file named "-x" being read as a flag
+  takes none
+  yields lines
+}
+
+filter zcat_file {
+  program "zcat"
+  in file: path
+  args ["--", file]
+  takes none
+  yields lines
+}
+
+filter grep_fixed {
+  program "grep"
+  in pattern: string
+  args ["-F", "-e", pattern]        // -e protects a pattern like "-foo" from being read as a flag
+  takes lines
+  yields lines
+  ok_codes [0, 1]                   // grep exits 1 for "no match", which is not a failure
+}
+
+filter nginx_test {
+  program "nginx"
+  args ["-t"]
+  takes none
+  yields none
+}
+
+filter nginx_reload {
+  program "nginx"
+  args ["-s", "reload"]
+  takes none
+  yields none
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+fn status_class(code: int) -> string {
+  return "${code / 100}xx"          // int / int is integer division
+}
+
+fn is_internal(addr: string) -> bool {
+  return starts_with(text: addr, prefix: "10.")
+      or starts_with(text: addr, prefix: "192.168.")
+      or addr == "127.0.0.1"
+}
+
+fn row(key: string, count: int) -> string {
+  return "${key}\t${count}"
+}
+
+// ---------------------------------------------------------------------------
+// Entry flow
+// ---------------------------------------------------------------------------
+
+main flow report {
+  in  log: path
+  in  since: duration = 24h
+  in  top: int = 10
+  in  match: string?
+  out errors: int
+
+  needs read log                    // narrows what the caller could otherwise grant
+
+  let entries = load(log: log, match: match).entries
+    .filter(where: it.epoch >= now_epoch() - since.seconds)
+
+  if count(of: entries) == 0 {
+    fail message: "no requests in the last ${since}"
+  }
+
+  summary {
+    print(text: "== status classes ==")
+    let classes = entries
+      .count_by(key: status_class(code: it.status))
+      .sort_by(key: it.key, order: asc)
+    for c in classes {
+      print(text: row(key: c.key, count: c.count))
+    }
+
+    print(text: "== top clients ==")
+    let clients = entries
+      .count_by(key: it.ip)
+      .sort_by(key: it.count, order: desc)
+      .take(n: top)
+    for c in clients {
+      print(text: row(key: c.key, count: c.count))
+    }
+
+    print(text: "== most-missed paths (404) ==")
+    let missed = entries
+      .filter(where: it.status == 404)
+      .count_by(key: it.path)
+      .sort_by(key: it.count, order: desc)
+      .take(n: top)
+    for c in missed {
+      print(text: row(key: c.key, count: c.count))
+    }
+
+    // Native stages on plain strings: no records needed.
+    print(text: "== distinct user agents ==")
+    let agents = entries
+      .map(to: it.agent)
+      .unique()
+      .take(n: top)
+    for a in agents {
+      print(text: a)
+    }
+  }
+
+  set errors = entries.filter(where: it.status >= 500).count()
+}
+
+// ---------------------------------------------------------------------------
+// Block clients over a request threshold
+// ---------------------------------------------------------------------------
+
+flow block {
+  in  log: path
+  in  threshold: int = 1000
+  in  since: duration = 1h
+  in  deny_file: path = path(text: "/etc/nginx/conf.d/deny.conf")
+  out blocked: list<string>
+
+  needs read  log
+  needs read  deny_file
+  needs write deny_file
+  requires exists(path: deny_file)
+  lock "/var/run/weir-logwatch.lock"   // a held lock fails the run at once; it does not wait
+
+  let offenders = load(log: log, match: absent).entries
+    .filter(where: it.epoch >= now_epoch() - since.seconds)
+    .count_by(key: it.ip)
+    .filter(where: it.count >= threshold)
+    .filter(where: not is_internal(addr: it.key))
+    .map(to: it.key)
+
+  // Skipped unless the caller passes --confirm.
+  apply {
+    let before   = read_text(file: deny_file)
+    let existing = read_lines(file: deny_file)
+    let fresh    = offenders
+      .map(to: "deny ${it};")
+      .filter(where: not contains(items: existing, item: it))
+
+    append_lines(file: deny_file, lines: fresh)
+
+    try {
+      nginx_test()
+    } catch e: ExecError {
+      write(file: deny_file, text: before)
+      fail message: "nginx rejected the new rules, restored the previous file: ${e.message}"
+    }
+    nginx_reload()
+  } when count(of: offenders) > 0 confirmable
+
+  set blocked = offenders
+}
+
+// ---------------------------------------------------------------------------
+// Remove entries from the deny file
+// ---------------------------------------------------------------------------
+
+flow unblock {
+  in  addr: string
+  in  deny_file: path = path(text: "/etc/nginx/conf.d/deny.conf")
+  out removed: bool
+
+  needs read  deny_file
+  needs write deny_file
+  requires exists(path: deny_file)
+  lock "/var/run/weir-logwatch.lock"
+
+  let target  = "deny ${addr};"
+  let current = read_lines(file: deny_file)
+
+  if contains(items: current, item: target) {
+    rewrite {
+      write_lines(file: deny_file, lines: current.filter(where: it != target))
+      nginx_test()
+      nginx_reload()
+    } confirmable
+    set removed = true
+  } else {
+    set removed = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Private: read plain or gzipped logs into typed records
+// ---------------------------------------------------------------------------
+
+private flow load {
+  in  log: path
+  in  match: string?
+  out entries: list<{ip: string, epoch: int, status: int, path: string, agent: string}>
+
+  needs read log
+
+  // Both branches are materialised into a list, so the whole log is held in memory.
+  let raw: list<string> = if extension(of: log) == "gz" {
+    zcat_file(file: log)
+  } else {
+    cat_file(file: log)
+  }
+
+  if let m = match {
+    set entries = raw
+      .grep_fixed(pattern: m)
+      .parse_access(on_bad: skip)
+  } else {
+    set entries = raw.parse_access(on_bad: skip)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: weir test logwatch.weir
+// ---------------------------------------------------------------------------
+
+test "status_class buckets by hundreds" {
+  expect status_class(code: 404) == "4xx"
+  expect status_class(code: 503) == "5xx"
+}
+
+test "internal addresses are never blocked" {
+  fixture dir "/srv/fixture" {
+    file "access.log" text: "10.1.2.3 ... 200\n10.1.2.3 ... 200\n"
+    file "deny.conf"  text: ""
+  }
+  let r = run block(
+    log: path(text: "/srv/fixture/access.log"),
+    deny_file: path(text: "/srv/fixture/deny.conf"),
+    threshold: 1
+  )
+  expect not contains(items: r.blocked, item: "10.1.2.3")
+}
