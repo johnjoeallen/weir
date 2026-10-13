@@ -12,6 +12,11 @@
 // by CI. Nothing ever prompts. A confirmable step is skipped, and reported as
 // "skipped: unconfirmed", unless the caller passes --confirm.
 //
+// External programs (cat, zcat, grep, nginx) run inside a filesystem jail. Each filter's
+// `jail` clause names the folders it imports and their modes, and the flow's `needs`
+// paths are imported too. Nothing else exists inside. Pass --no-jail only on hosts
+// where a jail cannot be created.
+//
 // With no flow name, `weir run` runs the `main` flow. Flows that are neither
 // `main` nor `private` can be named on the command line.
 
@@ -25,6 +30,7 @@ filter cat_file {
   program "cat"
   in file: path
   args ["--", file]                 // -- stops a file named "-x" being read as a flag
+  jail { mount system }
   takes none
   yields lines
 }
@@ -33,6 +39,7 @@ filter zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
+  jail { mount system }
   takes none
   yields lines
 }
@@ -41,6 +48,7 @@ filter grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern]        // -e protects a pattern like "-foo" from being read as a flag
+  jail { mount system }
   takes lines
   yields lines
   ok_codes [0, 1]                   // grep exits 1 for "no match", which is not a failure
@@ -49,6 +57,11 @@ filter grep_fixed {
 filter nginx_test {
   program "nginx"
   args ["-t"]
+  jail {
+    mount system
+    mount "/etc/nginx" ro           // outside the system set, so the calling flow must grant it
+    mount "/var/log/nginx" rw       // nginx -t opens its error log
+  }
   takes none
   yields none
 }
@@ -56,6 +69,10 @@ filter nginx_test {
 filter nginx_reload {
   program "nginx"
   args ["-s", "reload"]
+  jail {
+    mount system
+    mount "/run/nginx.pid" rw       // nginx -s reload reads the pid file and signals the master
+  }
   takes none
   yields none
 }
@@ -154,6 +171,9 @@ flow block {
   needs read  log
   needs read  deny_file
   needs write deny_file
+  needs read  "/etc/nginx"          // granted so the nginx filters may mount them
+  needs write "/var/log/nginx"
+  needs write "/run/nginx.pid"
   requires exists(path: deny_file)
   lock "/var/run/weir-logwatch.lock"   // a held lock fails the run at once; it does not wait
 
@@ -197,6 +217,9 @@ flow unblock {
 
   needs read  deny_file
   needs write deny_file
+  needs read  "/etc/nginx"
+  needs write "/var/log/nginx"
+  needs write "/run/nginx.pid"
   requires exists(path: deny_file)
   lock "/var/run/weir-logwatch.lock"
 
