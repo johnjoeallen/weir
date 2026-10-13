@@ -12,18 +12,18 @@
 // by CI. Nothing ever prompts. A confirmable step is skipped, and reported as
 // "skipped: unconfirmed", unless the caller passes --confirm.
 //
-// The jail block below defines the filesystem this script runs in. The interpreter and
+// The sandbox block below defines the filesystem this script runs in. The interpreter and
 // every program it starts live inside it, so every path in this file is a path inside the
-// jail, and nothing that is not mounted exists. --log and other command-line paths are
-// host paths and are translated through the mounts. A filter's `jail { see ... }` clause
-// narrows what its program sees. Pass --no-jail only on hosts where a jail cannot be created.
+// sandbox, and nothing that is not mounted exists. --log and other command-line paths are
+// host paths and are translated through the mounts. A filter's `sandbox { see ... }` clause
+// narrows what its program sees. Pass --no-sandbox only on hosts where a sandbox cannot be created.
 //
 // With no flow name, `weir run` runs the `main` flow. Flows that are neither
 // `main` nor `private` can be named on the command line.
 
 use "github:acme/weir-nginx@v1.0.0#parse_access"   // domain parser: a component, not core
 
-jail {
+sandbox {
   mount system
   mount "/var/log/nginx" rw          // logs to read; nginx -t also writes its error log here
   mount "/etc/nginx" ro
@@ -40,7 +40,7 @@ filter cat_file {
   program "cat"
   in file: path
   args ["--", file]                 // -- stops a file named "-x" being read as a flag
-  jail {
+  sandbox {
     see system
     see "/var/log/nginx" ro
   }
@@ -52,7 +52,7 @@ filter zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
-  jail {
+  sandbox {
     see system
     see "/var/log/nginx" ro
   }
@@ -64,7 +64,7 @@ filter grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern]        // -e protects a pattern like "-foo" from being read as a flag
-  jail { see system }
+  sandbox { see system }
   takes lines
   yields lines
   ok_codes [0, 1]                   // grep exits 1 for "no match", which is not a failure
@@ -73,7 +73,7 @@ filter grep_fixed {
 filter nginx_test {
   program "nginx"
   args ["-t"]
-  jail {
+  sandbox {
     see system
     see "/etc/nginx" ro
     see "/var/log/nginx" rw         // nginx -t opens its error log
@@ -85,7 +85,7 @@ filter nginx_test {
 filter nginx_reload {
   program "nginx"
   args ["-s", "reload"]
-  jail {
+  sandbox {
     see system
     see "/run/nginx.pid" rw         // nginx -s reload reads the pid file and signals the master
   }
