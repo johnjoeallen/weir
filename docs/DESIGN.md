@@ -40,7 +40,7 @@ Non-goals: Weir is not a general-purpose language, not an interactive shell, and
 2. **Make the common mistake unrepresentable first, detectable second, and a runtime failure third.** Each rule in this document is tagged by which of the three it relies on where that matters.
 3. **Failure is loud by default.** Tolerating failure is an explicit act.
 4. **Nothing prompts unless asked.** A script that works at a terminal must behave identically under cron.
-5. **Effects are declared, and enforced.** What a script may read and write, and which programs it may start, is visible from its header, and a caller can bound it. Built-ins are checked by the interpreter and external programs run in a filesystem jail built from the same declaration. The network is not covered.
+5. **Effects are declared, and enforced.** The top of the entry file defines the filesystem the script runs in: which host folders are visible, where, and in which mode. The interpreter and every program it starts live inside that jail, so what a script can touch can be read from one place. Which programs it may start is inferred. The network is not covered.
 6. **Error messages are the product.** See [section 19](#19-open-questions-and-known-weaknesses).
 
 ## 2. Execution Model
@@ -49,7 +49,7 @@ Weir is a single interpreter binary. `weir run file.weir` parses and interprets 
 
 ### 2.1 Subcommands that matter for the model
 
-**`weir check <file>`** is a static pass. It parses, resolves names, type-checks, infers capabilities, and runs lint rules. It never runs a command or reads the filesystem beyond the source files and the lockfile. Each finding has:
+**`weir check <file>`** is a static pass. It parses, resolves names, type-checks, infers the executable set, checks it against the declared jail, and runs lint rules. It never runs a command or reads the filesystem beyond the source files and the lockfile. Each finding has:
 
 | Field  | Meaning                                    |
 |--------|--------------------------------------------|
@@ -72,7 +72,7 @@ Text mode prints `file:line:col: code: message` followed by the fix hint. `--jso
 | 1    | flow failure (a step failed, an uncaught error, `fail`)              |
 | 2    | usage error (bad flag, missing input, wrong type on the command line) |
 | 3    | check error (`weir check` found errors, or `run` refused to start)   |
-| 4    | capability denied (an operation outside the granted capabilities, or a jail that cannot be created) |
+| 4    | capability denied (the jail cannot be created, or a filter's `see` clause asks for more than the jail provides) |
 
 `weir run` always performs the check pass first. Check errors exit 3 and nothing runs. Warnings do not block a run.
 
@@ -149,10 +149,8 @@ main flow example {
   in    note: string?                // optional, absent if not given
   in    token: secret                // credential, never accepted on argv
   out   report: path
-  needs read  "/etc/example"
-  needs write "/var/lib/example"
   requires exists(path: "/etc/example")
-  lock "/run/lock/example.lock"
+  lock "/run/lock/example.lock"     // an inside path; must be under a rw mount
 
   prepare {                          // inline step
     // ...
@@ -168,9 +166,8 @@ main flow example {
 
 - **`in`**: typed input. `= default` makes it optional. `T?` makes it optional with no default; if absent it is unwrapped with `if let`. `secret` marks a credential.
 - **`out`**: typed output. Assigned with `set name = expr` anywhere in the flow. Outputs assigned before a failure are still reported ([section 11.3](#113-output-channels)).
-- **`needs read` / `needs write`**: filesystem paths or path expressions the flow may touch ([section 7](#7-capabilities)).
 - **`requires`**: preconditions, evaluated before any step runs. A failing precondition fails the flow with exit 1 and the expression text in the message. Preconditions must be pure or read-only built-ins such as `exists`.
-- **`lock`**: acquire an exclusive advisory lock on the given path for the flow's duration. If it is already held, the flow fails immediately rather than waiting. A held lock is a signal, not a queue, and waiting is how cron jobs pile up.
+- **`lock`**: acquire an exclusive advisory lock on the given path for the flow's duration. The path is an inside path and must lie under a `rw` mount, or the lock would exclude nothing ([section 7.1](#71-the-script-defines-the-jail)). If it is already held, the flow fails immediately rather than waiting. A held lock is a signal, not a queue, and waiting is how cron jobs pile up.
 - **`finally`**: a block that runs whether or not the body succeeded. A failure inside `finally` is reported but does not mask the original failure.
 
 ### 4.2 Steps
@@ -227,7 +224,7 @@ The checker errors on a repeated step with no `as` label, since without it the p
 | `T?`         | Optional. There is no null. Unwrapped with `if let v = x {}`. |
 | records      | Structural: `{host: string, days: int}`.                      |
 
-`path` is distinct from `string` because the capability checks ([section 7](#7-capabilities)) and the built-in `delete`/`move` need to know which values are filesystem locations. A `string` is never implicitly converted to a `path`; use `path(text: s)`.
+`path` is distinct from `string` because command-line path inputs are translated through the jail's mount table ([section 7.1](#71-the-script-defines-the-jail)) and the built-in `delete`/`move` need to know which values are filesystem locations. A `string` is never implicitly converted to a `path`; use `path(text: s)`.
 
 **`secret`.** A `secret` cannot be printed, interpolated into a string, placed in a command's argument list, or written to a file by the checker's rules. It can only reach a program through a filter's environment (`env { NAME = token }`) or its stdin. It is redacted in logs and plan output. It cannot be accepted on argv ([section 11.2](#112-input-flags)).
 
@@ -284,62 +281,72 @@ Built-in error types: `ExecError`, `CapabilityError`, `IoError`, `ParseError`, `
 
 ## 7. Capabilities
 
-**What this section guarantees.** A flow declares the filesystem it may read and write, and Weir enforces that declaration on everything the flow does, including external programs. Built-ins are checked by the interpreter. External programs run inside a filesystem jail ([section 7.6](#76-filesystem-jail)) whose contents the script declares itself: the folders to import and the mode of each. The jail is a v1 requirement, not an option. The guarantee covers the filesystem only; network access, and anything reachable through a path the flow was granted, are outside it ([section 7.5](#75-not-covered)).
+**What this section guarantees.** A script defines, at the top of its entry file, the filesystem it runs in: a jail made of named host folders mounted at chosen paths with a mode each. The interpreter enters that jail before it runs any flow. From then on every path in the script, whether it goes to a built-in or to an external program, is a path inside the jail, and anything not mounted does not exist. Built-ins and external programs therefore see the same filesystem, and the guarantee needs no per-operation scope checks. The guarantee covers the filesystem only; network access, and anything reachable through a mount the script granted, are outside it ([section 7.5](#75-not-covered)).
 
-### 7.1 Filesystem scope is declared and evaluated at runtime
+### 7.1 The script defines the jail
 
-A flow declares what it may read and write with `needs read` and `needs write`. Paths may use inputs: `needs write dir`.
+The entry file (the one named on the `weir run` command line) has at most one file-level `jail` block, placed after its `use` lines and before its declarations.
 
-Enforcement uses the scope after every string and path expression has been evaluated to a concrete, normalised path (`..` resolved, symlinks resolved against the real filesystem). Because paths are computed from inputs, string operations and `/` joins, nothing short of evaluation can say where an operation will land. The evaluated scope is used in two places:
+```weir
+jail {
+  in logs: path = "/var/log/nginx"     // host path, can be overridden with --logs
+  mount system                         // the read-only system set, at the same paths
+  mount logs at "/logs" ro             // host folder `logs`, visible as /logs, read-only
+  mount "/etc/nginx" ro                // same path inside and out
+  mount "/etc/nginx/conf.d" rw         // a more specific mount overrides a broader one
+  mount "/run/lock" rw
+}
+```
 
-- a **built-in** that touches a path outside it throws `CapabilityError` (exit 4);
-- an **external program** is started in a jail containing the flow's `needs` paths plus the mounts that the script's `jail` clauses declare. A path in neither does not exist for the program.
+**Mount forms.**
 
-`weir check` also reports a violation when it can prove one without evaluating anything (a literal path outside a literal scope). That is a convenience for earlier feedback. A flow that passes `weir check` can still raise `CapabilityError` at runtime, and the checker never claims otherwise.
+| Form | Meaning |
+|------|---------|
+| `mount <host> at <inside> ro\|rw` | bind-mount the host folder or file at `<inside>` in the jail |
+| `mount <path> ro\|rw` | shorthand for `mount <path> at <path> ...`, the same path inside and out |
+| `mount system` | the read-only **system set**, each at its own path: `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, and the files `/etc/ssl`, `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf`, `/etc/localtime` |
 
-### 7.1.1 What the declared scope does not cover
+All mounts are `nosuid` and `nodev`. A mount is a folder or a single file. Where mounts overlap, the more specific `<inside>` path wins. `mount system` is never implied.
 
-- **Anything inside a granted path.** `needs write dir` lets an external program delete everything in `dir`. The jail bounds where, not what. `run(cmd: "rm", args: ["-rf", dir])` is therefore confined to `dir`, but it is not protected by the refusals in [section 7.4](#74-destructive-built-ins). The checker still warns when a literal `cmd` or `program` names a well-known destructive tool (`rm`, `mv`, `dd`, `chmod`, `chown`, `mkfs`, `shred`, `truncate`) and suggests the built-in (`W-DESTRUCTIVE-PROGRAM`), because the built-ins have more checks than the jail does.
-- **Sockets and devices the flow was granted.** A filter that needs the D-Bus socket to run `systemctl` receives write access to that socket, and through it whatever the daemon will do for that caller.
+**Host side and inside side.** `<host>` is a path on the machine running Weir. `<inside>` is the path the script sees. Using different values makes a script portable across hosts: the script refers only to `/data`, and the operator decides which host folder that is. The jail block may declare `in` values of type `path` for the host side, like a flow's inputs. They produce flags (`--logs /srv/nginx-logs`) and `--help` entries and are evaluated before the jail is entered. They exist only for the jail block; flows cannot read them, because after the jail is entered the host path is not meaningful to the script.
+
+**What is inside.** The jail root is an empty, read-only tmpfs holding the mount points, plus three fixed entries that are not declared: a private writable `/tmp`, a minimal `/dev` (`null`, `zero`, `urandom`, `tty`), and `/proc` for a new PID namespace. The working directory is `/tmp`. The environment is rebuilt rather than inherited: only `PATH`, `LANG`, `TZ`, `HOME` (set to `/tmp`) and what a filter declares in `env`.
+
+**Paths in the script are inside paths.** A `path` literal, a `path` default and every path computed by `/` joining is a path in the jail. Built-ins such as `read_text`, `write` and `delete` operate on the jail. External programs started by `filter` and `run` run in the same jail and inherit its view, so `tail(file: log, n: 10)` passes the program the same path the script used.
+
+**Paths from the command line are host paths.** An operator thinks in host paths, so a `path` input given as `--log /var/log/nginx/access.log` is a host path that Weir translates through the mount table to the inside path. A relative path is resolved against the host working directory first. If the path does not fall under any mount, the run fails with exit 2 and a message that lists the mounts. Defaults written in the script are inside paths. If two mounts expose the same host path, translation is ambiguous and `weir check` reports an error for the mounts it can compare statically; at run time the more specific inside path is used.
+
+**Entering the jail.** `weir run` does its work in this order: parse and check the entry file, fetch and verify imported components against the lockfile, read any `--secret-file` and `--secret-stdin` inputs, evaluate the jail block and translate command-line paths, then enter the jail ([section 7.6](#76-mechanism-and-availability)) and run the flow. Everything that needs host paths happens before the jail exists. After that point the interpreter itself cannot see the host outside the mounts.
+
+**Locks.** `lock <path>` in a flow names an inside path. A lock file inside the private root, or inside `/tmp`, would exclude nothing, because each run has its own. The lock path must therefore lie under a `rw` mount (`mount "/run/lock" rw` in the example above), or `weir check` reports `E-JAIL-LOCK-UNSHARED`.
+
+**Why the jail is declared at the top and not per operation.** One place shows everything the script can touch. Reading the top of the file answers "what can this do to my machine" without reading the flows, and a caller can restrict it further with `--ro` ([section 11.1.1](#1111-run-time-control-flags)).
+
+### 7.1.1 What the jail does not cover
+
+- **Anything inside a mount.** A `rw` mount lets built-ins and every program delete everything in it. The jail bounds where, not what. `run(cmd: "rm", args: ["-rf", dir])` is confined to the jail, but it is not subject to the refusals in [section 7.4](#74-destructive-built-ins). The checker warns when a literal `cmd` or `program` names a well-known destructive tool (`rm`, `mv`, `dd`, `chmod`, `chown`, `mkfs`, `shred`, `truncate`) and suggests the built-in (`W-DESTRUCTIVE-PROGRAM`), because the built-ins have more checks than the jail does.
+- **Sockets and devices that were mounted.** Mounting the D-Bus socket so that `systemctl` works gives every program that sees it whatever the daemon will do for that caller.
 - **The network.** See [section 7.5](#75-not-covered).
 - **Flaws in the jail itself.** It relies on kernel namespace and mount behaviour. It is a strong boundary against a script's mistakes and an ordinary misbehaving program. It is not a promise against a deliberately hostile program exploiting a kernel bug.
 
 ### 7.2 Executable capabilities are inferred
 
-The set of executables a flow may run is computed from its call graph: the `program` of each filter it reaches, and the literal `cmd` of each `run`. A dynamic `cmd` (computed at runtime) is a check error, which is the reason `program` and `cmd` must be literals. This set is an allow-list of which programs may be started, and `weir check` verifies that each program's resolved path is reachable through the mounts declared for it ([section 7.6](#76-filesystem-jail)). Weir does not add executable or library paths on its own.
+The set of executables a flow may run is computed from its call graph: the `program` of each filter it reaches, and the literal `cmd` of each `run`. A dynamic `cmd` (computed at runtime) is a check error, which is the reason `program` and `cmd` must be literals. This set is an allow-list of which programs may be started. `weir check` also verifies that each program's resolved path lies under a mount in the jail, and reports `E-JAIL-EXEC-UNREACHABLE` with the fix hint `add mount system, or mount "<dir>" ro` if not. Weir does not add executable or library paths on its own.
 
 **Alternative rejected: requiring an explicit `needs exec` list.** It is redundant with the call graph and goes stale; an inferred set cannot disagree with the code.
 
-**Alternative considered: inferring filesystem capabilities too.** Rejected: paths are frequently computed from inputs, so inference would produce either imprecise (everything) or unsound results, and inference could never see what an external program does. Declaring them is also documentation for the reader and the caller.
+### 7.3 Filters narrow the view; components cannot widen it
 
-### 7.3 Intersection and filter mounts
-
-A called component receives the intersection of its own declaration and the caller's grant. A library flow that declares `needs write "/"` cannot exceed what its caller allowed, so importing a component cannot widen the script's reach, either through built-ins or through the jail it starts programs in. The caller's grant is the caller's declaration intersected with anything imposed from the CLI (`--allow-write PATH`, `--deny-exec NAME`).
-
-A `filter` declares the extra folders its program needs with a `jail` clause ([section 7.6](#76-filesystem-jail)): a configuration directory, a daemon socket, a PID file, the system directories. Mounts outside the system set are **requirements, not grants**. They must lie within the grant of the flow that calls the filter, or the call throws `CapabilityError` naming the filter and the path. This keeps what a program can touch visible in the calling flow's header, and in the manifest, rather than hidden in a wrapper, and stops a library from widening the script's reach.
-
-### 7.4 Destructive built-ins
-
-The built-ins `delete` and `move` refuse any path outside the declared write scope, and unconditionally refuse `/` and the user's `$HOME`, even if the scope would otherwise include them. This is a backstop for the empty-variable `rm -rf "$DIR/"` case. An external `rm` is confined by the jail to the write scope but is not subject to the extra refusals ([section 7.1.1](#711-what-the-declared-scope-does-not-cover)). Because `path` values are never concatenated from strings and an unset input is `absent` rather than empty, most such cases are caught earlier by the type system.
-
-### 7.5 Not covered
-
-Network access is not a declared capability in v1, and the jail does not unshare the network namespace, because most useful scripts need the network. A permitted program may open any connection. This is a known gap ([section 19](#19-open-questions-and-known-weaknesses)). Allowed hosts and ports are deferred.
-
-### 7.6 Filesystem jail
-
-Every external program started by a `filter` or `run` runs in a jail. The script defines the jail's filesystem: it names the folders to import and the mode of each. Weir adds nothing the script did not name, apart from the small fixed infrastructure listed below. So "the program can only touch what the script declared" is true by construction, and the whole view can be read from the source.
-
-**Declaring mounts.** A `jail` clause lists mounts. Each mount imports a host folder (or file) into the jail at the same path, in one of two modes:
+By default an external program sees the whole jail, with every mount in the mode it was declared. A `filter` may narrow what its program sees with a `jail` clause listing inside paths and a mode:
 
 ```weir
 filter nginx_test {
   program "nginx"
   args ["-t"]
   jail {
-    mount system                   // the fixed read-only system set, see below
-    mount "/etc/nginx" ro
-    mount "/var/log/nginx" rw
+    see system
+    see "/etc/nginx" ro
+    see "/var/log/nginx" rw
   }
   takes none
   yields none
@@ -348,52 +355,65 @@ filter nginx_test {
 
 | Form | Meaning |
 |------|---------|
-| `mount <path> ro` | bind-mount read-only, `nosuid`, `nodev` |
-| `mount <path> rw` | bind-mount read-write, `nosuid`, `nodev` |
-| `mount system` | shorthand for the read-only **system set**: `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, and the files `/etc/ssl`, `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf`, `/etc/localtime` |
+| `see <inside> ro\|rw` | the program sees this inside path in this mode |
+| `see system` | the system set |
 
-`mount system` is never implied. A filter with no `jail` clause has an empty filesystem and, unless the executable is reachable some other way, cannot start (see "Checking the declaration" below). The shorthand exists because nearly every filter would otherwise repeat the same five lines.
+When a filter has a `jail` clause the program sees only those paths. Each `see` must name a path that is mounted in the script's jail, in that mode or a more permissive one: `see "/data" ro` is satisfied by a `rw` mount of `/data`, and `see "/data" rw` is not satisfied by a `ro` mount. Otherwise the call throws `CapabilityError` naming the filter, the path and the mode, and `weir check` reports it when the paths are literal. A filter therefore never sees more than the script's jail, and a `see` clause can only remove access, never add it.
 
-Mount paths may use inputs: `mount dir rw`. They are evaluated to concrete, normalised paths before the program starts, the same as `needs` paths.
+**Components.** Only the entry file has a `jail` block. A `jail` block in an imported file is an error (`E-JAIL-NOT-ENTRY`). Filters in imported components use `see` clauses, and those are their requirements: an imported filter that says `see "/etc/ssl" ro` fails the check against a script that did not mount `/etc/ssl`. A library therefore cannot widen what the script exposes, and the requirements show in the component's manifest.
 
-**Where `jail` may appear.** In a `filter`, for the program that filter wraps. In a `flow`, for bare `run` commands in that flow's body, which have no filter of their own. A flow's `needs read` and `needs write` paths are also imported into the jail of every external program the flow starts, at the stated mode (`read` as `ro`, `write` as `rw`), so a path the flow's own built-ins can use is also visible to the programs it runs. A path given only in a `jail` clause is visible to the program and not to the flow's built-ins.
+The caller can narrow further with `--ro <inside-path>` (turn a `rw` mount into `ro` for this run) and `--deny-exec <name>`.
 
-**Limits on what a component may mount.** A filter from an imported component can name mounts, so mounts need the same intersection rule as `needs` ([section 7.3](#73-intersection-and-filter-mounts)):
+**Alternative rejected: a separate jail per flow.** It would let one file's flows see different filesystems, but it multiplies the places to read, and a flow calling another flow would need a rule for whose jail wins. One file, one jail; filters narrow.
 
-- `mount system` and the paths in the system set may always be mounted `ro`;
-- any other mount, in either mode, must lie within the calling flow's grant (`needs read` for `ro`, `needs write` for `rw`; a `needs write` path also satisfies a `ro` mount);
-- otherwise the call throws `CapabilityError` naming the filter, the path and the mode, and `weir check` reports it when the paths are literal.
+**Alternative rejected: no narrowing at all.** Every wrapped program would see every writable folder the script has, so a network client would have the same write access as the backup tool. Narrowing is cheap because `see` is a subset check.
 
-So an imported filter cannot quietly mount `/home` or write outside what the calling flow granted, and cannot mount `/` read-write.
+### 7.4 Destructive built-ins
 
-**Fixed infrastructure.** Three things are present in every jail and are not declared: a private `/tmp`, a minimal `/dev` (`null`, `zero`, `urandom`, `tty`), and a private `/proc` inside a new PID namespace, so the program cannot see or signal other processes. The environment is rebuilt rather than inherited: only `PATH`, `LANG`, `TZ`, `HOME` (pointing into the private `/tmp`) and the variables the filter declares in `env`.
+The built-ins `delete` and `move` refuse the jail root `/` and any mount point itself (the mounted folder as a whole, as distinct from its contents), in addition to failing on read-only mounts like any write. This is a backstop for the empty-variable `rm -rf "$DIR/"` case. An external `rm` is confined by the jail but is not subject to the extra refusals ([section 7.1.1](#711-what-the-jail-does-not-cover)). Because `path` values are never concatenated from strings and an unset input is `absent` rather than empty, most such cases are caught earlier by the type system.
 
-**Checking the declaration.** Because the script, not Weir, decides what is mounted, a wrong declaration shows up as a program that cannot start or cannot find a library. `weir check` and the runtime catch the common cases:
+### 7.5 Not covered
 
-- `weir check` resolves each filter's `program` against the mounts it declares and reports `E-JAIL-EXEC-UNREACHABLE` if the executable's resolved path lies under none of them, with the fix hint `add mount system, or mount "<dir>" ro`.
-- At run time, if the program fails to start because the loader cannot find a library, the error names the jail and lists the mounts, instead of passing through a bare `exec` failure.
-- `weir jail suggest <file>` is a separate tool that reports, for each filter, the executable and library paths it found by reading the binary's ELF dependencies and `#!` interpreter, and prints a suggested `jail` clause. It is a helper for writing the declaration. Nothing is derived from it at run time. It cannot see `dlopen`ed libraries or helper programs the tool runs (`git-*`, an `ssh` `ProxyCommand`), which is why the author stays in control.
+Network access is not a declared capability in v1, and the jail does not unshare the network namespace, because most useful scripts need the network. A permitted program may open any connection. This is a known gap ([section 19](#19-open-questions-and-known-weaknesses)). Allowed hosts and ports are deferred.
 
-**Mechanism.** The jail is a mount namespace entered with `pivot_root`, created through an unprivileged user namespace, so no root is needed. A plain `chroot(2)` is not used: it requires root and is not a security boundary, because a process with root inside a chroot can escape it. Creating a user namespace requires a single-threaded caller, and the interpreter is multithreaded, so the interpreter re-executes itself as a small helper (`weir __jail-exec`) that sets up the namespaces and mounts, rebuilds the environment, then `exec`s the target program.
+### 7.6 Mechanism and availability
 
-**Availability.** v1 supports Linux only, because the mechanism is Linux namespaces. If the jail cannot be created (unprivileged user namespaces disabled, a container that forbids them, an unsupported platform), Weir refuses to start the program, throws `CapabilityError`, and exits 4 with a message naming the cause. It does not fall back to running unconfined. The only override is the CLI flag `--no-jail`, which cannot be set from a script, is printed in a warning on stderr, and is recorded in the `--json` result as `"jail": false`. A script that only uses built-ins and `fn`s needs no jail and runs anywhere the interpreter does.
+**Mechanism.** The jail is a mount namespace entered with `pivot_root`, created through an unprivileged user namespace, so no root is needed. A plain `chroot(2)` is not used: it requires root and is not a security boundary, because a process with root inside a chroot can escape it. Creating a user namespace requires a single-threaded caller, so `weir run` re-executes itself as a small single-threaded stage (`weir __jail-run`) that creates the user, mount and PID namespaces, builds the mount table, rebuilds the environment, calls `pivot_root`, and continues as the interpreter inside the jail. The interpreter becomes process 1 of the new PID namespace and reaps its children. For a program whose filter has a `jail` clause, Weir creates a nested mount namespace for that child and bind-mounts only the `see` paths into it, which a process may do inside its own user namespace.
 
-`weir run --plan` and `weir list --manifest` print each external program's resolved mount table, so what a script exposes can be reviewed without running it.
+The interpreter must be able to run after the host is gone. The release binary is statically linked (musl) and does not read host libraries once the jail is entered.
+
+**Availability.** v1 supports Linux only, because the mechanism is Linux namespaces. If the jail cannot be created (unprivileged user namespaces disabled, a container that forbids them, an unsupported platform), Weir exits 4 with a message naming the cause. It does not fall back to running unconfined.
+
+The only override is the CLI flag `--no-jail`. It cannot be set from a script, prints a warning on stderr, and is recorded in the `--json` result as `"jail": false`. With `--no-jail` no namespaces are created and every inside path is used as a host path, so it works only for a script whose mounts all map a path to itself (`mount "/x" rw`, `mount system`). A script with a remapping mount (`mount logs at "/logs" ro`) exits 2 under `--no-jail`.
+
+A script that uses only built-ins and `fn`s still runs in the jail when it declares one; with no `jail` block it runs unconfined, and `weir check` reports `W-NO-JAIL` for any file that starts an external program without one. Non-Linux hosts can run such scripts.
+
+**Checking the declaration.** Because the script, not Weir, decides what is mounted, a wrong declaration shows up as a path that is not there, a program that cannot start, or a library it cannot find. Weir turns these into messages that name the jail:
+
+- `E-JAIL-EXEC-UNREACHABLE` (static), as described in [section 7.2](#72-executable-capabilities-are-inferred);
+- a filesystem error inside the jail (`ENOENT`, `EROFS`, `EACCES`) on a path outside every mount, or on a read-only mount, is reported with the inside path, the nearest mount and its mode;
+- if a program fails to start because the loader cannot find a library, the error lists the mount table.
+
+`weir jail suggest <file>` is a separate tool that reports, for each filter, the executable and library paths it found by reading the binary's ELF dependencies and `#!` interpreter, and prints suggested `mount` and `see` lines. It is a helper for writing the declaration; nothing is derived from it at run time. It cannot see `dlopen`ed libraries or helper programs the tool runs (`git-*`, an `ssh` `ProxyCommand`).
+
+`weir run --plan` and `weir list --manifest` print the resolved mount table, with host and inside paths, so what a script exposes can be reviewed without running it.
 
 **Costs and open problems.**
 
-- **Verbosity.** Every filter carries a `jail` clause, and a wrong one is the author's bug. This is the price of declaring the filesystem explicitly. `mount system` removes the worst of the repetition; it does not remove the need to know that `curl` wants `/etc/ssl` or that `systemctl` wants a socket.
-- **Tools needing unusual paths.** Programs routinely need more than their obvious paths: locale and certificate stores, NSS modules, helper binaries, daemon sockets. Each is a mount the author must find. `weir jail suggest` finds only what static analysis can.
-- **Daemon sockets.** `systemctl` and `docker` need their socket mounted `rw`, which punches a hole the filesystem scope cannot describe. The mount must lie within the calling flow's `needs write` ([section 7.3](#73-intersection-and-filter-mounts)), so the grant is visible in the flow header.
-- **No path remapping.** A mount appears at the same path inside the jail as outside. Mounting a host folder at a different path (`mount "/srv/work" at "/work" rw`) is not in v1.
+- **Verbosity.** Every script that runs an external program carries a jail block, and a wrong one is the author's bug. `mount system` removes the worst of the repetition; it does not remove the need to know that `curl` wants `/etc/ssl` or that `systemctl` wants a socket.
+- **Tools needing unusual paths.** Programs routinely need more than their obvious paths: locale and certificate stores, NSS modules, helper binaries, daemon sockets. Each is a mount the author must find.
+- **Daemon sockets.** `systemctl` and `docker` need their socket mounted `rw`, which punches a hole the jail cannot describe. A filter's `see` clause limits which programs get it.
+- **Single-file mounts.** A file bind-mounted at a path cannot be replaced by rename, only written in place. Built-ins that normally write a temporary file and rename it must write in place when the target is a mount point.
 - **Network confinement** is separate and not included.
-- **Bind mounts expose the real tree.** A `rw` mount is writable by the program in full.
+- **Bind mounts expose the real tree.** A `rw` mount is writable in full.
 
-**Deferred refinements.** Mounting `rw` paths through overlayfs with a scratch layer would let `weir run --plan` run external programs and report the file changes they made, which would address the biggest weakness of `--plan` ([section 19.5](#195-weaknesses-in-the-design-as-it-stands)), and would allow committing a step's changes only on success. Landlock could serve as a second backend on systems where user namespaces are disabled. Neither is in v1.
+**Deferred refinements.** Mounting `rw` paths through overlayfs with a scratch layer would let `weir run --plan` run external programs and report the file changes they made, which would address the biggest weakness of `--plan` ([section 19.5](#195-weaknesses-in-the-design-as-it-stands)), and would allow committing a step's changes only on success. Landlock could serve as a second backend on systems where user namespaces are disabled.
 
-**Alternative rejected: Weir derives the jail contents automatically** (system directories by default, executable and library paths found by dependency resolution). It makes scripts shorter, but the real filesystem view then depends on the host's libraries and on resolver logic inside Weir, cannot be read from the script, and fails differently on different machines. An author reading a script should be able to see what its programs can touch. The discovery work is kept as a suggestion tool instead.
+**Alternative rejected: Weir derives the jail contents automatically** (system directories by default, executable and library paths found by dependency resolution). It makes scripts shorter, but the real filesystem view then depends on the host's libraries and on resolver logic inside Weir, cannot be read from the script, and fails differently on different machines. An author reading a script should be able to see what it can touch. The discovery work is kept as a suggestion tool instead.
 
-**Alternative rejected: leaving confinement to the user (run Weir under `bwrap`, Docker or systemd sandboxing).** The declared scope is already in the script, and a jail configured separately from it will drift from it. Making the jail part of the interpreter keeps the declaration and the enforcement together, and keeps one behaviour on every host that runs the script.
+**Alternative rejected: per-operation scope declarations (`needs read` and `needs write`) checked by the interpreter, with externals jailed separately.** It gives two path spaces, one for built-ins and one for programs, which have to be kept consistent by the author. A single jail that the interpreter itself lives in removes the second space and the scope checks.
+
+**Alternative rejected: leaving confinement to the user (run Weir under `bwrap`, Docker or systemd sandboxing).** The declared filesystem is already in the script, and a jail configured separately from it will drift from it. Making the jail part of the interpreter keeps the declaration and the enforcement together, and keeps one behaviour on every host that runs the script.
 
 **Alternative rejected: a weaker, best-effort jail.** A jail that sometimes silently does not apply gives a guarantee that appears to hold and does not. Refusing to run is the only honest alternative to a working jail.
 
@@ -483,7 +503,7 @@ use "https://artifactory.example.com/weir/tls.weir@2.1.0#check_expiry"
 
 ### 10.2 Manifests
 
-Each component's header (inputs, outputs, defaults, capabilities) is parseable without reading its body. `weir list --manifest <file>` prints it. This lets a caller check what a component needs, and lets the checker validate calls, without trusting or executing the component. The inferred executable set is part of the manifest and is computed from the component's own call graph.
+Each component's header (inputs, outputs, defaults, and the `see` requirements of its filters) is parseable without reading its body. `weir list --manifest <file>` prints it, and for an entry file also prints the resolved mount table. This lets a caller check what a component needs, and lets the checker validate calls, without trusting or executing the component. The inferred executable set is part of the manifest and is computed from the component's own call graph.
 
 **Alternative rejected: unpinned `use` of a branch.** A moving dependency makes `weir check` results time-dependent.
 
@@ -500,14 +520,14 @@ weir jail suggest <file>
 
 ### 11.1 Generated flags
 
-Typed inputs generate flags and `--help`. `in count: int = 3` becomes `--count <int>` with `3` shown as default. `list<T>` inputs accept repeated flags. `bool` inputs are `--flag` / `--no-flag`. Enums list their values in `--help`. A value that fails to parse as its declared type is exit 2 with the offending flag named.
+A file-level `jail` block's `in` values generate flags in the same way ([section 7.1](#71-the-script-defines-the-jail)). Typed inputs generate flags and `--help`. `in count: int = 3` becomes `--count <int>` with `3` shown as default. `list<T>` inputs accept repeated flags. `bool` inputs are `--flag` / `--no-flag`. Enums list their values in `--help`. A value that fails to parse as its declared type is exit 2 with the offending flag named. A `path` value is a host path and is translated to the inside path through the mount table; one that falls under no mount is also exit 2, and the message lists the mounts.
 
 ### 11.1.1 Run-time control flags
 
 - `--confirm`: run `confirmable` steps.
 - `--plan`: print what would happen and run nothing.
-- `--allow-write PATH`, `--deny-exec NAME`: narrow the grant ([section 7.3](#73-intersection-and-filter-mounts)).
-- `--no-jail`: start external programs without the filesystem jail ([section 7.6](#76-filesystem-jail)). Prints a warning on stderr. Exists for hosts where jails cannot be created; not settable from a script.
+- `--ro INSIDE_PATH`, `--deny-exec NAME`: narrow the jail for this run: turn a `rw` mount into `ro`, or refuse to start a program ([section 7.3](#73-filters-narrow-the-view-components-cannot-widen-it)).
+- `--no-jail`: run without the filesystem jail ([section 7.6](#76-mechanism-and-availability)). Prints a warning on stderr. Works only for scripts whose mounts all map a path to itself. Exists for hosts where jails cannot be created; not settable from a script.
 
 ### 11.2 Input flags
 
@@ -550,7 +570,7 @@ test "ban_noisy_clients writes only offenders" {
 }
 ```
 
-Tests never touch the real filesystem or run real programs unless a test explicitly opts in. `fn` tests need no fixtures. This section is deliberately thin; fixture semantics are listed as an open question.
+Tests never touch the real filesystem or run real programs unless a test explicitly opts in. Each test runs in its own jail made of its fixtures, with each `fixture dir` appearing at its stated path, so a flow under test sees only what the test gave it. `fn` tests need no fixtures. This section is deliberately thin; fixture semantics are listed as an open question.
 
 ## 13. Worked Example: Log Analysis and Config Change
 
@@ -558,12 +578,25 @@ Read a web server's access log, find clients producing many error responses, wri
 
 ```weir
 // ban_noisy_clients.weir
+jail {
+  mount system
+  mount "/var/log/nginx" rw          // the access log; nginx -t also writes its error log here
+  mount "/etc/nginx" ro
+  mount "/etc/nginx/conf.d" rw       // more specific, so the blocklist and its backup are writable
+  mount "/run/lock" rw               // the lock file must be on a shared (host) mount
+  mount "/run/systemd" ro
+  mount "/run/dbus/system_bus_socket" rw
+}
+
 filter tail {
   program "tail"
   in file: path
   in n: int
   args ["-n", string(value: n), file]
-  jail { mount system }             // the file argument is visible through the flow's needs read
+  jail {                            // narrows: tail sees the system set and the log folder, read-only
+    see system
+    see "/var/log/nginx" ro
+  }
   takes none
   yields lines
 }
@@ -572,9 +605,9 @@ filter nginx_test {
   program "nginx"
   args ["-t"]
   jail {
-    mount system
-    mount "/etc/nginx" ro           // outside the system set, so the calling flow must grant it
-    mount "/var/log/nginx" rw       // nginx -t opens its error log
+    see system
+    see "/etc/nginx" ro
+    see "/var/log/nginx" rw         // nginx -t opens its error log
   }
   takes none
   yields none
@@ -586,9 +619,9 @@ filter systemctl {
   in unit: string
   args [action, unit]
   jail {
-    mount system
-    mount "/run/systemd" ro
-    mount "/run/dbus/system_bus_socket" rw
+    see system
+    see "/run/systemd" ro
+    see "/run/dbus/system_bus_socket" rw
   }
   takes none
   yields none
@@ -615,12 +648,6 @@ main flow ban_noisy_clients {
   in threshold: int = 200       // error responses before a client is banned
   out banned: list<string>
 
-  needs read log
-  needs write blocklist
-  needs read  "/etc/nginx"          // the filters below mount these, so the flow must grant them
-  needs write "/var/log/nginx"
-  needs read  "/run/systemd"
-  needs write "/run/dbus/system_bus_socket"
   requires exists(path: log)
   lock "/run/lock/ban_noisy_clients.lock"
 
@@ -662,9 +689,9 @@ main flow ban_noisy_clients {
 
 Points worth noting:
 
-- `needs write blocklist` bounds the built-ins `write` and `copy`, and `blocklist` is also imported read-write into the jail of every program the flow starts. `nginx` and `systemctl` run with exactly the mounts their `jail` clauses name, plus the flow's `needs` paths; nothing else exists for them. The backup file lands next to the blocklist, so it is within the declared scope only if the declaration covers the parent directory. As written, `blocklist` is an input, so the checker cannot prove the violation. At runtime the interpreter evaluates `backup`, finds it outside `needs write blocklist`, and the `copy` throws `CapabilityError` (exit 4) with a message suggesting `needs write blocklist.parent()`. This is a deliberate sample of the kind of error the runtime must get right.
-- The inferred executable set is `{tail, nginx, systemctl}`. `weir check` confirms each resolves under the mounts of its own filter (`mount system` covers `/usr/bin` and `/usr/sbin`). A caller can see the mount tables with `weir list --manifest`, and `weir run --plan` prints them.
-- The `systemctl` socket mount is a real hole in the jail: it is writable, and `systemd` will act on requests sent through it. The filesystem scope cannot describe that, and the example makes the mount visible in both the filter and the flow header rather than hiding it.
+- The script's whole filesystem is the `jail` block. `tail`, `nginx` and `systemctl` each see only their `see` paths, which must be mounted in the jail in at least that mode. The backup file lands next to the blocklist, in `/etc/nginx/conf.d`, which is mounted `rw`, so the `copy` succeeds. Had it been written to `/etc/nginx/blocklist.bak`, that path falls under the `ro` mount of `/etc/nginx`, the write fails with a read-only error, and the message names the mount and its mode. Producing that message is the kind of thing the runtime must get right.
+- The inferred executable set is `{tail, nginx, systemctl}`. `weir check` confirms each resolves under the mounts the program sees (`mount system` covers `/usr/bin` and `/usr/sbin`). A caller can see the resolved mount table with `weir list --manifest`, and `weir run --plan` prints it. Passing `--log /var/log/nginx/access.log.1` works because that host path falls under the `/var/log/nginx` mount.
+- The `systemctl` socket mount is a real hole in the jail: it is writable, and `systemd` will act on requests sent through it. The jail cannot describe that. The `see` clauses limit it to the one filter that needs it, and the mount is visible at the top of the script.
 - The flow is safe to run from cron. Without `--confirm` it updates the blocklist and validates it, then reports `reload: skipped: unconfirmed`. An operator can follow with `weir run ban_noisy_clients.weir --confirm`, or put `--confirm` in the cron line once they trust it.
 - If `nginx_test()` fails the flow fails with exit 1 and the `.bak` file is left in place. A production version would restore the backup in a `catch`; it is omitted here to keep the example short.
 - `tail(...).filter(...).count_by(...)` streams until `count_by`, which buffers one counter per distinct IP, then `sort_by` buffers the resulting (smaller) set. The log itself is never held in memory.
@@ -675,12 +702,15 @@ Probe a list of hosts, compute days to certificate expiry, classify each, and fa
 
 ```weir
 // check_certs.weir
+jail {
+  mount system                       // openssl and date, /etc/ssl, resolver config
+}
+
 filter s_client {
   program "openssl"
   in host: string
   in port: int = 443
   args ["s_client", "-connect", "${host}:${port}", "-servername", host]
-  jail { mount system }
   takes none
   yields text
   ok_codes [0]
@@ -689,7 +719,6 @@ filter s_client {
 filter x509_enddate {
   program "openssl"
   args ["x509", "-noout", "-enddate"]
-  jail { mount system }
   takes text
   yields text
   ok_codes [0]
@@ -699,7 +728,6 @@ filter epoch_of {
   program "date"
   in stamp: string
   args ["-u", "-d", stamp, "+%s"]
-  jail { mount system }
   takes none
   yields text
 }
@@ -764,7 +792,7 @@ Points worth noting:
 - `try` around the pipeline means an unreachable host does not abort the loop, but the failure is still recorded and still produces a non-zero exit at the end. Tolerance is local and explicit; the final `fail` restores the default.
 - With `--json`, a failing run still emits `results`, because `set results = rows` ran before `fail`. A monitoring system gets both the exit code 1 and the full table.
 - `probe as host` gives each iteration the identity `probe[i] "<host>"` in the plan, the log, and the `steps` array of the JSON output.
-- No `needs` clauses are present because the flow touches no files of its own. Each filter's `jail { mount system }` gives `openssl` and `date` the system set (which includes `/etc/ssl`, `/etc/resolv.conf` and `/etc/hosts`) and nothing else. Their capability set is `{openssl, date}`. The network reach of `openssl` is not bounded by the jail ([section 7.5](#75-not-covered)).
+- The jail is just `mount system`. The flow touches no files of its own, and its filters have no `see` clause, so `openssl` and `date` see the system set, including `/etc/ssl`, `/etc/resolv.conf` and `/etc/hosts`, and nothing else. Their capability set is `{openssl, date}`. The network reach of `openssl` is not bounded by the jail ([section 7.5](#75-not-covered)).
 - `classify` is a `fn`, so it is testable without stubs.
 
 ## 15. Grammar Sketch
@@ -772,20 +800,22 @@ Points worth noting:
 This is a sketch, not a complete grammar. Whitespace is insignificant except as a token separator; newlines terminate statements, and a line ending in `,`, an operator or an open bracket continues. Comments begin with `//`.
 
 ```ebnf
-file        = { use_decl | declaration } ;
+file        = { use_decl } [ jail_block ] { declaration } ;
 use_decl    = "use" string ;
 
 declaration = flow | filter | fn | test ;
 
 flow        = [ "main" | "private" ] "flow" ident "{" { flow_item } "}" ;
-flow_item   = in_decl | out_decl | needs | jail | requires | lock
+flow_item   = in_decl | out_decl | requires | lock
             | finally | statement ;
 
 in_decl     = "in" ident ":" type [ "=" expr ] ;
 out_decl    = "out" ident ":" type ;
-needs       = "needs" ( "read" | "write" ) expr ;
-jail        = "jail" "{" { mount } "}" ;
-mount       = "mount" ( "system" | expr ( "ro" | "rw" ) ) ;
+jail_block  = "jail" "{" { in_decl | mount } "}" ;     (* entry file only *)
+mount       = "mount" ( "system"
+                      | expr [ "at" expr ] ( "ro" | "rw" ) ) ;
+see_block   = "jail" "{" { see } "}" ;                  (* inside a filter *)
+see         = "see" ( "system" | expr ( "ro" | "rw" ) ) ;
 requires    = "requires" expr ;
 lock        = "lock" expr ;
 finally     = "finally" block ;
@@ -794,7 +824,7 @@ filter      = "filter" ident "{" { filter_item } "}" ;
 filter_item = "program" string
             | in_decl
             | "args" list_lit
-            | jail
+            | see_block
             | "env" "{" { ident "=" expr } "}"
             | "takes" io_kind
             | "yields" io_kind
@@ -837,16 +867,16 @@ Operator precedence, high to low: member access `.`, unary `not` and `-`, `*` `/
 ## 16. Reserved Words
 
 ```text
-absent   and      args     as       catch    confirmable
-else     enum     env      expect   false    fail
-filter   finally  fixture  flow     fn       for
-if       in       it       jail     json     let
-lines    lock     main     mount    needs    none
+absent   and      args     as       at       catch
+confirmable else  enum     env      expect   false
+fail     filter   finally  fixture  flow     fn
+for      if       in       it       jail     json
+let      lines    lock     main     mount    none
 not      ok_codes or       out      private  program
-read     requires return   ro       run      rw
-secret   set      stub     system   takes    test
+requires return   ro       run      rw       secret
+see      set      stub     system   takes    test
 text     true     try      use      var      when
-write    yields
+yields
 ```
 
 `it` is reserved in pipeline stage expressions only; elsewhere the checker rejects its use as a binding name to avoid ambiguity. Names in the error-type list (`ExecError`, `CapabilityError`, `IoError`, `ParseError`, `Timeout`) are reserved in type position.
@@ -869,7 +899,7 @@ The reference implementation is intended to be written in Rust. File extension: 
 
 - **Single static binary.** Rust produces one self-contained executable that can be copied to a host that has none of the toolchain, which matters for a tool that replaces bash on arbitrary hosts.
 - **Hand-written recursive-descent parser.** Parser generators give weak error messages and weak recovery. Since error quality is the product ([section 19](#19-open-questions-and-known-weaknesses)), the parser is written by hand to control the spans, the expected-token lists, and recovery so that one mistake does not produce a cascade.
-- **Direct process spawning.** Commands are spawned with an argument vector and no shell. On Linux each spawn goes through the jail helper (`weir __jail-exec`, a re-execution of the same binary), which creates the user, mount and PID namespaces, bind-mounts exactly the mounts the script declared (plus the fixed `/tmp`, `/dev` and `/proc`), rebuilds the environment, calls `pivot_root`, and `exec`s the target. The helper is needed because `unshare(CLONE_NEWUSER)` requires a single-threaded process. Namespace and mount calls go through `libc` or `nix`. Dependency discovery for `weir jail suggest` reads the ELF headers directly rather than invoking `ldd`, which executes the binary.
+- **Direct process spawning.** Commands are spawned with an argument vector and no shell. On Linux the interpreter enters the jail once, at startup of a run, by re-executing itself as a single-threaded stage (`weir __jail-run`) that creates the user, mount and PID namespaces, builds the declared mount table (plus the fixed `/tmp`, `/dev` and `/proc`), rebuilds the environment, calls `pivot_root`, and continues as the interpreter. The stage is needed because `unshare(CLONE_NEWUSER)` requires a single-threaded process. The release binary is statically linked (musl) so it needs nothing from the host once inside. As PID 1 of the new PID namespace the interpreter must reap orphaned children. Filters with a `see` clause start their program in a nested mount namespace. Namespace and mount calls go through `libc` or `nix`. Dependency discovery for `weir jail suggest` reads the ELF headers directly rather than invoking `ldd`, which executes the binary.
 - **Alternative considered: Go.** Equally capable of a static binary and quicker to write. Rust is preferred for the sum types and exhaustive matching that the checker's data model (types, capabilities, findings) benefits from. This is a preference, not a hard constraint, and the choice does not affect the language.
 
 ## 19. Open Questions and Known Weaknesses
@@ -884,7 +914,7 @@ The named-argument rule helps here (there are fewer ways to be wrong) but does n
 
 ### 19.2 Language surface versus "simpler than bash"
 
-The goal is a language simpler than bash for the target scripts. Counting the concepts in this document: four declarations, nine header or step modifiers, eleven types and forms, structured errors, capability declarations with intersection semantics, a mandatory filesystem jail that the script defines mount by mount, with an escape flag, a lockfile, a fixture system, and a native-stage vocabulary. That is not obviously smaller than bash plus a linter, and a reader could reasonably call it larger. Bash is bad, but it is small.
+The goal is a language simpler than bash for the target scripts. Counting the concepts in this document: four declarations, nine header or step modifiers, eleven types and forms, structured errors, a mandatory filesystem jail that the entry file defines mount by mount, with `see` narrowing in filters and an escape flag, a lockfile, a fixture system, and a native-stage vocabulary. That is not obviously smaller than bash plus a linter, and a reader could reasonably call it larger. Bash is bad, but it is small.
 
 The bet is that these concepts are each individually easy and rarely interact, and that the checker removes the need to learn the sharp edges. That is unverified. Candidates for removal if the surface proves too large: `lock` (a built-in could do it), `requires` (an `if ... fail` does the same), records as a distinct type (use maps), the `finally` block.
 
@@ -892,15 +922,15 @@ The bet is that these concepts are each individually easy and rarely interact, a
 
 - **Structural record types** appear in the type table. They are needed for `count_by` output and parsed JSON, but they make Weir's type system larger than the "distinct types" list in the brief. An alternative is `map<string, T>` throughout, at the cost of heterogeneous rows.
 - **`set` for outputs and `try` as an attempt record** are syntactic choices made here without much competition from alternatives.
-- **The filesystem jail** ([section 7.6](#76-filesystem-jail)) and **`jail` clauses with `mount` on filters and flows** ([section 7.3](#73-intersection-and-filter-mounts)) are not in the original brief. They follow from the decision that external programs must be confined by the same declaration as built-ins.
+- **The filesystem jail** ([section 7](#7-capabilities)) with a file-level `jail` block, host-to-inside remapping, and `see` clauses on filters are not in the original brief. They replace the brief's `needs read` and `needs write`, which Weir could only have enforced on its own built-ins. The jail also changes how `path` inputs behave on the command line.
 - **`$` in `...$list`** appears only in spread. Variables are otherwise bare. It is inconsistent and should probably be `...list`.
 
 ### 19.4 Deferred past v1
 
 - Parallelism (concurrent steps or `for` iterations).
 - Network capabilities (allowed hosts, ports).
-- Jail refinements ([section 7.6](#76-filesystem-jail)): overlayfs-backed `--plan` and commit-on-success, a Landlock backend where user namespaces are disabled, network namespaces.
-- Jail support outside Linux (macOS, BSDs). v1 refuses to start external programs where it cannot jail them.
+- Jail refinements ([section 7.6](#76-mechanism-and-availability)): overlayfs-backed `--plan` and commit-on-success, a Landlock backend where user namespaces are disabled, network namespaces.
+- Jail support outside Linux (macOS, BSDs). v1 refuses to run a script that starts external programs where it cannot jail them, unless `--no-jail` is given.
 - Windows support. The v1 design assumes POSIX semantics for signals, locks, and paths.
 - A package index. Components come from paths, GitHub and Artifactory/Nexus only.
 - Interactive use and a REPL.
@@ -918,7 +948,9 @@ The bet is that these concepts are each individually easy and rarely interact, a
 - **`fn` purity versus reading the clock.** `now_epoch()` is not allowed in a `fn`, so time-dependent logic must be passed in as an argument. This is correct and mildly annoying.
 - **Secrets in filters.** `env { NAME = token }` is the only route for a secret to a program besides stdin. Some programs accept credentials only on argv. Those cannot be wrapped safely, and the design offers no answer beyond "write a wrapper".
 - **Network is outside the capability model.**
-- **The jail is Linux-only and may be unavailable.** It depends on unprivileged user namespaces, which are disabled on some hardened hosts and forbidden in some containers. There the program is not started (exit 4) unless the operator passes `--no-jail`. macOS and the BSDs have no v1 jail, so any script that runs an external program is Linux-only in practice. For a language meant to replace bash everywhere, this is a significant limit. Whether to accept it, or to add a weaker non-Linux backend, is open.
+- **The jail is Linux-only and may be unavailable.** It depends on unprivileged user namespaces, which are disabled on some hardened hosts and forbidden in some containers. There the run exits 4 unless the operator passes `--no-jail`, which works only for scripts without remapping mounts. macOS and the BSDs have no v1 jail, so any script that runs an external program is Linux-only in practice. For a language meant to replace bash everywhere, this is a significant limit. Whether to accept it, or to add a weaker non-Linux backend, is open.
+- **Command-line paths are translated, not taken literally.** An operator passes host paths and the script sees inside paths, so an error message that mentions a path must say which kind. A path that is not under any mount fails with exit 2 before the script starts. Translating paths in `list<path>` inputs and in paths embedded in other values (a URL, a config file) is not possible; a program given a host path inside a string will not find it.
+- **The interpreter lives inside the jail it enforces.** A bug that lets a script call a built-in on a path outside the mount table is not possible by construction, but a bug in the pre-jail stage (path translation, lockfile verification, secret reading) happens outside it and has host access. That stage is the part of the interpreter that must be small and audited.
 - **Script-defined mounts are verbose and easy to get wrong.** Programs need paths nobody thinks of: certificate stores, locale data, NSS modules, helper binaries, daemon sockets. Because the author lists the mounts, a missing one is the author's bug and shows up as a program failing to start or to find a library. `mount system`, the `E-JAIL-EXEC-UNREACHABLE` check and `weir jail suggest` are the mitigations. If authors find this too burdensome they will either mount broadly (a flow cannot mount `/` read-write, but `/usr`, `/etc` and `/var` are not so limited) or run with `--no-jail`, and the guarantee shrinks to nothing. Whether explicit mounts or automatic derivation yields better real-world jails is open; the design chose explicit and records the alternative in section 7.6.
 - **Fixtures are under-specified.** Stubbing at the filter level does not test the real program's behaviour, and the fixture language for directory trees is only sketched.
 - **Naming strictness has a cost.** Named-only calls make short scripts noticeably longer than their bash equivalents. This may hurt adoption for one-liners, which are a large share of what bash is used for. A `weir -e` one-liner mode is not designed.
@@ -927,7 +959,7 @@ The bet is that these concepts are each individually easy and rarely interact, a
 
 Roughly in order of cost:
 
-1. **Proving a write is inside the declared scope.** Paths are computed from inputs and strings (`dir / name`). A sound static proof needs symbolic path reasoning: normalising `..`, tracking that a value derives from a `needs` root, and handling symlinks, which static analysis cannot see at all. The design therefore does not attempt it: scope is decided at runtime on evaluated paths ([section 7.1](#71-filesystem-scope-is-declared-and-enforced-at-runtime)), and the static check reports only violations provable from literals. The cost is that some violations surface at runtime, as exit 4 partway through a run, rather than at check time.
+1. **Explaining jail failures.** The kernel reports `ENOENT`, `EROFS` or `EACCES`. The message must say which mount a path fell under (or that it fell under none), in terms of inside paths, with the host path alongside when it differs. Doing this for built-ins and for errors printed by external programs, which Weir can only see as text, is uneven. There is no static scope proof to implement: unlike per-operation scope checks, the jail needs no symbolic path reasoning, because anything outside a mount does not exist. The checker's jail rules are limited to `E-JAIL-EXEC-UNREACHABLE`, `E-JAIL-LOCK-UNSHARED`, `E-JAIL-NOT-ENTRY` and literal `see` checks.
 2. **Capability inference through the call graph** with imports from remote components. It requires computing the manifest of each component without executing it, and it must handle recursion and diamond imports.
 3. **Pipeline element-type inference** through generic stages with `it`. Requires bidirectional inference and good error messages when it fails, which is hard because the error appears far from the cause.
 4. **`secret` flow analysis.** Tracking that no expression derived from a `secret` reaches an argument list, an interpolation, a file write or an output. Has to follow values through `fn` returns and record fields.
@@ -940,5 +972,5 @@ Roughly in order of cost:
 
 - Should `use` allow importing a `fn` or `filter` on its own, or only flows? The manifest model currently assumes flows, but filters are the most reusable thing.
 - How are exit codes from nested flow calls reflected in `--json` `steps`? One failure should not produce a confusing cascade of "failed" entries.
-- Is the `lock` path part of the capability model? As written it is not subject to `needs write`, which is an exception worth removing.
+- Should a jail block be allowed to `include` a shared set of mounts from a component (a `mount web_server` preset), or is `mount system` the only built-in shorthand? Presets would cut repetition and add a fifth thing to define and import.
 - Should `ok_codes` allow named meanings (for example, `grep` code 1 meaning "no match" and so `yields` an empty result), rather than only a list of numbers?

@@ -3,24 +3,34 @@
 // logwatch.weir: summarise an nginx access log and block abusive clients.
 //
 //   weir run logwatch.weir --log /var/log/nginx/access.log
-//   weir run logwatch.weir --log access.log.1.gz --since 7d --top 20
-//   weir run logwatch.weir block --log access.log --threshold 500
-//   weir run logwatch.weir block --log access.log --plan      // show what would run
-//   weir run logwatch.weir block --log access.log --confirm   // also run confirmable steps
+//   weir run logwatch.weir --log /var/log/nginx/access.log.1.gz --since 7d --top 20
+//   weir run logwatch.weir block --log /var/log/nginx/access.log --threshold 500
+//   weir run logwatch.weir block --log /var/log/nginx/access.log --plan      // show what would run
+//   weir run logwatch.weir block --log /var/log/nginx/access.log --confirm   // also run confirmable steps
 //
 // A script runs the same way however it is invoked: by a person, by cron, or
 // by CI. Nothing ever prompts. A confirmable step is skipped, and reported as
 // "skipped: unconfirmed", unless the caller passes --confirm.
 //
-// External programs (cat, zcat, grep, nginx) run inside a filesystem jail. Each filter's
-// `jail` clause names the folders it imports and their modes, and the flow's `needs`
-// paths are imported too. Nothing else exists inside. Pass --no-jail only on hosts
-// where a jail cannot be created.
+// The jail block below defines the filesystem this script runs in. The interpreter and
+// every program it starts live inside it, so every path in this file is a path inside the
+// jail, and nothing that is not mounted exists. --log and other command-line paths are
+// host paths and are translated through the mounts. A filter's `jail { see ... }` clause
+// narrows what its program sees. Pass --no-jail only on hosts where a jail cannot be created.
 //
 // With no flow name, `weir run` runs the `main` flow. Flows that are neither
 // `main` nor `private` can be named on the command line.
 
 use "github:acme/weir-nginx@v1.0.0#parse_access"   // domain parser: a component, not core
+
+jail {
+  mount system
+  mount "/var/log/nginx" rw          // logs to read; nginx -t also writes its error log here
+  mount "/etc/nginx" ro
+  mount "/etc/nginx/conf.d" rw       // more specific, so deny.conf and its backups are writable
+  mount "/run/nginx.pid" rw          // a single-file mount; nginx -s reload signals the master
+  mount "/run/lock" rw               // the lock file must be on a shared (host) mount
+}
 
 // ---------------------------------------------------------------------------
 // Declared filters: each wraps exactly one external program
@@ -30,7 +40,10 @@ filter cat_file {
   program "cat"
   in file: path
   args ["--", file]                 // -- stops a file named "-x" being read as a flag
-  jail { mount system }
+  jail {
+    see system
+    see "/var/log/nginx" ro
+  }
   takes none
   yields lines
 }
@@ -39,7 +52,10 @@ filter zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
-  jail { mount system }
+  jail {
+    see system
+    see "/var/log/nginx" ro
+  }
   takes none
   yields lines
 }
@@ -48,7 +64,7 @@ filter grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern]        // -e protects a pattern like "-foo" from being read as a flag
-  jail { mount system }
+  jail { see system }
   takes lines
   yields lines
   ok_codes [0, 1]                   // grep exits 1 for "no match", which is not a failure
@@ -58,9 +74,9 @@ filter nginx_test {
   program "nginx"
   args ["-t"]
   jail {
-    mount system
-    mount "/etc/nginx" ro           // outside the system set, so the calling flow must grant it
-    mount "/var/log/nginx" rw       // nginx -t opens its error log
+    see system
+    see "/etc/nginx" ro
+    see "/var/log/nginx" rw         // nginx -t opens its error log
   }
   takes none
   yields none
@@ -70,8 +86,8 @@ filter nginx_reload {
   program "nginx"
   args ["-s", "reload"]
   jail {
-    mount system
-    mount "/run/nginx.pid" rw       // nginx -s reload reads the pid file and signals the master
+    see system
+    see "/run/nginx.pid" rw         // nginx -s reload reads the pid file and signals the master
   }
   takes none
   yields none
@@ -106,7 +122,6 @@ main flow report {
   in  match: string?
   out errors: int
 
-  needs read log                    // narrows what the caller could otherwise grant
 
   let entries = load(log: log, match: match).entries
     .filter(where: it.epoch >= now_epoch() - since.seconds)
@@ -168,14 +183,8 @@ flow block {
   in  deny_file: path = path(text: "/etc/nginx/conf.d/deny.conf")
   out blocked: list<string>
 
-  needs read  log
-  needs read  deny_file
-  needs write deny_file
-  needs read  "/etc/nginx"          // granted so the nginx filters may mount them
-  needs write "/var/log/nginx"
-  needs write "/run/nginx.pid"
   requires exists(path: deny_file)
-  lock "/var/run/weir-logwatch.lock"   // a held lock fails the run at once; it does not wait
+  lock "/run/lock/weir-logwatch.lock"   // inside path, on the rw /run/lock mount; a held lock fails at once
 
   let offenders = load(log: log, match: absent).entries
     .filter(where: it.epoch >= now_epoch() - since.seconds)
@@ -215,13 +224,8 @@ flow unblock {
   in  deny_file: path = path(text: "/etc/nginx/conf.d/deny.conf")
   out removed: bool
 
-  needs read  deny_file
-  needs write deny_file
-  needs read  "/etc/nginx"
-  needs write "/var/log/nginx"
-  needs write "/run/nginx.pid"
   requires exists(path: deny_file)
-  lock "/var/run/weir-logwatch.lock"
+  lock "/run/lock/weir-logwatch.lock"
 
   let target  = "deny ${addr};"
   let current = read_lines(file: deny_file)
@@ -247,7 +251,6 @@ private flow load {
   in  match: string?
   out entries: list<{ip: string, epoch: int, status: int, path: string, agent: string}>
 
-  needs read log
 
   // Both branches are materialised into a list, so the whole log is held in memory.
   let raw: list<string> = if extension(of: log) == "gz" {
