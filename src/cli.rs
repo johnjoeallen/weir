@@ -14,7 +14,7 @@ use std::io::Read as _;
 use std::rc::Rc;
 
 /// Mirrors `revision` in Cargo.toml; scripts/build-deb.sh bumps both after each package build.
-pub(crate) const BUILD_NUMBER: u32 = 4;
+pub(crate) const BUILD_NUMBER: u32 = 5;
 
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_FAIL: i32 = 1;
