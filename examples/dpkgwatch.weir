@@ -1,4 +1,4 @@
-#!/usr/bin/env weir
+#!/usr/bin/env weir --run
 //
 // dpkgwatch.weir: summarise package activity from a dpkg log.
 //
