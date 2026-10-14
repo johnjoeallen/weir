@@ -1,5 +1,7 @@
 # Weir
 
+**Documentation: <https://johnjoeallen.github.io/weir/>**
+
 Weir is a small interpreted language for scripts: anything you would otherwise write in bash, run from a terminal, a cron job, a systemd unit or a pipeline.
 
 Scripts have a shape: inputs, a sequence of steps, some outputs. Shell languages leave that shape implied. Weir makes it the language, and checks it before anything runs.
@@ -56,4 +58,4 @@ weir list  <file> [--manifest]
 
 ## Status
 
-Early, but working: the interpreter runs the examples in `examples/` and the worked examples in the design document. See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for what is built, what is not, and the places where the design was silent and a decision was made. The language itself is specified in [docs/DESIGN.md](docs/DESIGN.md) and is still allowed to change.
+Early, but working: the interpreter runs the examples in `examples/` and the worked examples in the design document. See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for what is built, what is not, and the places where the design was silent and a decision was made. The language itself is specified in [docs/DESIGN.md](docs/DESIGN.md) and is subject to change.

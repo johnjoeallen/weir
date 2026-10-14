@@ -1,0 +1,68 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Docs version to publish (e.g. 0.99). Blank = MAJOR.MINOR of the latest git tag.'
+        required: false
+      retire:
+        description: 'Optional: a previously published docs version to delete (e.g. 0.1).'
+        required: false
+  workflow_call:
+    inputs:
+      version:
+        description: 'Docs version to publish. Blank = MAJOR.MINOR of the latest git tag.'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve docs version
+        id: v
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
+            VERSION="$(echo "${TAG#v}" | cut -d. -f1,2)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy docs
+        run: |
+          git fetch origin gh-pages --depth=1 || true
+          mike deploy --push --update-aliases "${{ steps.v.outputs.version }}" latest
+          mike set-default --push latest
+
+      - name: Retire an old docs version
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.retire != '' }}
+        run: mike delete --push "${{ inputs.retire }}"

@@ -1,0 +1,70 @@
+site_name: Weir
+site_description: A small interpreted language for scripts that glue programs together, checked before they run.
+site_url: https://johnjoeallen.github.io/weir/
+repo_url: https://github.com/johnjoeallen/weir
+repo_name: johnjoeallen/weir
+edit_uri: edit/main/docs/
+copyright: GNU General Public License v3.0
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+extra_css:
+  - assets/extra.css
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  version:
+    provider: mike
+    default: latest
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Command line: cli.md
+  - The sandbox: sandbox.md
+  - Examples: examples.md
+  - Design: DESIGN.md
+  - Implementation status: IMPLEMENTATION.md
