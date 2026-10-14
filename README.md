@@ -49,6 +49,9 @@ weir run   <file> [flow] [--flags]
 weir check <file> [--json]
 weir test  [path]
 weir list  <file> [--manifest]
+
+./script.weir --run [flow] [--flags]   # a script with a shebang; --check, --test, --list also work
+./script.weir                          # no mode flag: shows the script's help and runs nothing
 ```
 
 ## Status

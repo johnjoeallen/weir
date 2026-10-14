@@ -2,9 +2,9 @@
 //
 // dpkgwatch.weir: summarise package activity from a dpkg log.
 //
-//   ./dpkgwatch.weir                       (reads /var/log/dpkg.log, last 7 days)
-//   ./dpkgwatch.weir --log /var/log/dpkg.log.2.gz --since 30d --top 20
-//   ./dpkgwatch.weir --log /var/log/dpkg.log --match golang
+//   ./dpkgwatch.weir --run                 (reads /var/log/dpkg.log, last 7 days)
+//   ./dpkgwatch.weir --run --log /var/log/dpkg.log.2.gz --since 30d --top 20
+//   ./dpkgwatch.weir --run --log /var/log/dpkg.log --match golang
 //
 // Read-only: it never writes anything, so it needs no confirmable steps.
 // Each dpkg.log line is "YYYY-MM-DD HH:MM:SS <action> <package> <old> <new>",

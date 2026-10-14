@@ -27,8 +27,8 @@ Weir: scripts that glue programs together, checked before they run
 
 usage:
   weir run   <file> [flow] [--flags]    run a flow (the `main` flow by default)
-  weir <file> [flow] [--flags]         the same, so a `#!/usr/bin/env weir` script can be executed directly
-  weir <file> --check | --test | --list   pick another mode (`./script.weir --check`)
+  weir <file> --run [flow] [--flags]   the same, for a `#!/usr/bin/env weir` script: ./script.weir --run
+  weir <file> --check | --test | --list   other modes; with no mode flag a script only shows its help
   weir check <file> [--json]            check a script without running anything
   weir list  <file> [--manifest]        list flows, their inputs and outputs
   weir test  [path]                     run the `test` blocks of a file or folder
@@ -303,11 +303,27 @@ fn absolutize(p: &str) -> String {
     }
 }
 
-/// `weir FILE [--check | --test | --list | --run] ...`: a script given directly can
-/// pick a mode with a flag, since a shebang line leaves no room for a command word.
+/// `weir FILE [--check | --test | --list | --run] ...`: a script given directly picks
+/// a mode with a flag, since a shebang line leaves no room for a command word. With no
+/// mode flag nothing runs: the script's help is shown, so executing a file never acts
+/// by accident. `weir run FILE` is the explicit command and always runs.
 fn cmd_script(args: &[String]) -> i32 {
     let mode = args[1..].iter().find(|a| matches!(a.as_str(), "--check" | "--test" | "--list" | "--run"));
-    let Some(mode) = mode else { return cmd_run(args) };
+    let Some(mode) = mode else {
+        if args[1..].iter().any(|a| a == "--help") {
+            return cmd_run(args);
+        }
+        let flow = args[1..].first().filter(|a| !a.starts_with("--")).cloned();
+        let mut help = vec![args[0].clone()];
+        help.extend(flow);
+        help.push("--help".into());
+        let code = cmd_run(&help);
+        if code == EXIT_OK {
+            eprintln!("\nweir: nothing was run. Add --run to run it (--check, --test and --list are the other modes).");
+            return EXIT_USAGE;
+        }
+        return code;
+    };
     let rest: Vec<String> = args.iter().filter(|a| *a != mode).cloned().collect();
     match mode.as_str() {
         "--check" => cmd_check(&rest),

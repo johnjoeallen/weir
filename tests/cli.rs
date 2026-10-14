@@ -303,3 +303,14 @@ fn a_script_given_directly_can_pick_a_mode_with_a_flag() {
     assert!(t.stdout.contains("1 passed"), "{}", t.stdout);
     assert!(weir_args(&[s(&p), "--list"]).stdout.contains("out r"));
 }
+
+#[test]
+fn a_script_given_directly_does_nothing_without_a_mode_flag() {
+    let marker = script("main flow a {\n  out r: int\n  fail message: \"ran\"\n}\n");
+    let o = weir_args(&[s(&marker)]);
+    assert_eq!(o.code, 2, "{}", o.stderr);
+    assert!(o.stderr.contains("nothing was run"), "{}", o.stderr);
+    assert!(!o.stderr.contains("ran\n"), "{}", o.stderr);
+    assert_eq!(weir_args(&[s(&marker), "--run"]).code, 1);
+    assert_eq!(weir_args(&[s(&marker), "--help"]).code, 0);
+}
