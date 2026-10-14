@@ -674,9 +674,22 @@ script refer to this view, not to the host.</p>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>}
 </code></pre></div>
 <p>A filter can restrict what its program sees by adding <code>see</code> lines to its declaration.
-The program then sees only the paths listed there, and only those that the script's
-own <code>sandbox</code> block mounted. Only the script you run has a <code>sandbox</code> block. A script
-it imports with <code>use</code> can't mount anything, so imported code never sees more than the
+This one runs <code>nginx -t</code>, which needs the config and its own error log:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>filter nginx_test {
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  program "nginx"
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  args ["-t"]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  see system
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  see "/etc/nginx" ro
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  see "/var/log/nginx" rw       // nginx -t opens its error log
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  takes none
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  yields none
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>}
+</code></pre></div>
+<p>The program sees only the paths listed there, and only those that the script's own
+<code>sandbox</code> block mounted. A filter with no <code>see</code> lines sees everything the script mounted.
+A <code>see</code> line can only narrow: <code>see "/etc/nginx" rw</code> would be an error here, because the
+script mounts it read-only. Only the script you run has a <code>sandbox</code> block. A script it
+imports with <code>use</code> can't mount anything, so imported code never sees more than the
 script you run allows.</p>
 <h2 id="how-it-is-enforced">How it is enforced<a class="headerlink" href="#how-it-is-enforced" title="Permanent link">&para;</a></h2>
 <p>On Linux the interpreter creates user, mount and PID namespaces without root,
@@ -696,9 +709,9 @@ inside the script's sandbox. Just before the program starts, Weir:</p>
 <li>calls <code>pivot_root</code> into that root and detaches the previous one;</li>
 <li>starts the program.</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>host
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a> └─ the script's sandbox      user, mount and PID namespaces, pivot_root
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>     └─ one filter's view     nested mount namespace, pivot_root, only the `see` paths
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>host
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a> └─ the script's sandbox      user, mount and PID namespaces, pivot_root
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>     └─ one filter's view     nested mount namespace, pivot_root, only the `see` paths
 </code></pre></div>
 <p>Paths the script mounted but the filter doesn't <code>see</code> aren't in that program's
 view at all. The script, and any other filter, still sees them. A <code>see</code> can only
@@ -710,12 +723,12 @@ and PID namespaces as the script.</p>
 <p>A <code>within</code> block does for several statements what <code>see</code> lines do for one program. Its header lists
 the view, and every program started inside it, and the built-ins that touch the filesystem,
 see only that:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>let info = within system, "/etc" ro {
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  let kernel = run(cmd: "uname", args: ["-s", "-r"])
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  let hosts  = cat_file(file: path(text: "/etc/hosts"))
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  return { kernel: first(of: kernel), hosts: count(of: hosts) }
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>let info = within system, "/etc" ro {
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  let kernel = run(cmd: "uname", args: ["-s", "-r"])
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  let hosts  = cat_file(file: path(text: "/etc/hosts"))
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>  return { kernel: first(of: kernel), hosts: count(of: hosts) }
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>}
 </code></pre></div>
 <ul>
 <li><strong>A value:</strong> <code>return</code> leaves the block with a value, so no variable has to be declared outside
