@@ -1,9 +1,10 @@
 # The sandbox
 
-The `sandbox` block at the top of the entry file defines the filesystem the script
-runs in. The interpreter and every program it starts run inside that sandbox.
-Every path in the script is therefore a path inside the sandbox, and anything that
-is not mounted does not exist.
+A script declares the part of the machine it can see in a `sandbox` block at the
+top of the script you run. Weir builds that view first and then runs the script
+inside it, together with every program the script starts. A directory the block
+doesn't mount isn't hidden or read-only. It simply isn't there. Paths written in the
+script refer to this view, not to the host.
 
 ```weir
 sandbox {
@@ -14,9 +15,10 @@ sandbox {
 ```
 
 A filter can restrict what its program sees by adding a `sandbox { see ... }` block.
-The program then sees only the paths listed there, and only those that the entry
-file mounted. An imported component can't mount anything of its own, so it can never
-see more than the entry file allows.
+The program then sees only the paths listed there, and only those that the script's
+own `sandbox` block mounted. Only the script you run has a `sandbox` block. A script
+it imports with `use` can't mount anything, so imported code never sees more than the
+script you run allows.
 
 ## How it is enforced
 
