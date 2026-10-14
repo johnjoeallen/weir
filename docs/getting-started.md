@@ -25,9 +25,10 @@ The binary is installed as `/usr/bin/weir`. The docs and the example scripts go
 under `/usr/share/doc/weir/`. The package links the host libc dynamically.
 
 !!! note "Platform"
-    The sandbox needs Linux with unprivileged user namespaces. Weir has only been
-    run on Linux (x86_64). On a host that cannot create the sandbox, `weir run`
-    exits 4, and `--no-sandbox` runs without it and prints a warning.
+    The sandbox requires Linux with unprivileged user namespaces enabled. Weir has
+    only been tested on Linux (x86_64). If the sandbox cannot be created, `weir run`
+    exits with code 4. Passing `--no-sandbox` runs the script without a sandbox and
+    prints a warning.
 
 ## Run an example
 
@@ -36,20 +37,20 @@ under `/usr/share/doc/weir/`. The package links the host libc dynamically.
 ```bash
 weir run examples/dpkgwatch.weir
 weir run examples/dpkgwatch.weir --log /var/log/dpkg.log.2.gz --since 30d --top 20
-weir run examples/dpkgwatch.weir --help        # flags generated from the script's inputs
+weir run examples/dpkgwatch.weir --help        # options generated from the script's inputs
 ```
 
 ## Make a script executable
 
-A script can start with `#!/usr/bin/env -S weir --run`. Executing it then runs it:
+A script that starts with `#!/usr/bin/env -S weir --run` runs when executed:
 
 ```bash
 ./examples/dpkgwatch.weir --top 5
-./examples/dpkgwatch.weir --check
 ```
 
-With a plain `#!/usr/bin/env weir` line, or no mode flag, executing the file only
-shows the script's help and exits 2. Nothing runs by accident.
+With a plain `#!/usr/bin/env weir` line, executing the file only shows the
+script's help and exits 2. Nothing runs by accident. See
+[Command line](cli.md#running-a-script-directly) for why `-S` is needed.
 
 ## Write one
 

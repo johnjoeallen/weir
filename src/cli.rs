@@ -26,16 +26,16 @@ const USAGE: &str = "\
 Weir: scripts that glue programs together, checked before they run
 
 usage:
-  weir run   <file> [flow] [--flags]    run a flow (the `main` flow by default)
-  weir <file> --run [flow] [--flags]   the same, a shebang of `#!/usr/bin/env -S weir --run` makes ./script.weir run
-  weir <file> --check | --test | --list   other modes; with no mode flag a script only shows its help
+  weir run   <file> [flow] [options]    run a flow (the `main` flow by default)
+  weir <file> --run [flow] [options]   the same, a shebang of `#!/usr/bin/env -S weir --run` makes ./script.weir run
+                                       without --run, a script given directly only shows its help
   weir check <file> [--json]            check a script without running anything
   weir list  <file> [--manifest]        list flows, their inputs and outputs
   weir test  [path]                     run the `test` blocks of a file or folder
   weir lock  [file]                     pin remote components (none are supported yet)
   weir sandbox suggest <file>           suggest mounts for a script's programs
 
-run flags:
+run options:
   --confirm            also run `confirmable` steps
   --plan               print what would happen and run nothing
   --json               print one JSON result document; `print` goes to stderr
@@ -45,7 +45,7 @@ run flags:
   --secret-file <name>=<path>   read a `secret` input from a file (mode 0600)
   --secret-stdin <name>         read a `secret` input from stdin
   --no-sandbox         run without the filesystem sandbox (see docs/DESIGN.md 7.6)
-  --help               show the flags a script generates from its inputs
+  --help               show the options a script generates from its inputs
 
 exit codes: 0 success, 1 flow failure, 2 usage error, 3 check error, 4 capability denied
 ";
@@ -54,7 +54,7 @@ pub fn main_entry() -> i32 {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // `#!/usr/bin/env -S weir --run` makes the kernel run `weir --run ./script args`:
     // a leading mode flag followed by the file is the same as `weir ./script --run args`.
-    if args.len() >= 2 && matches!(args[0].as_str(), "--check" | "--test" | "--list" | "--run") && !args[1].starts_with("--") {
+    if args.len() >= 2 && args[0] == "--run" && !args[1].starts_with("--") {
         let mode = args.remove(0);
         args.insert(1, mode);
     }
@@ -130,7 +130,7 @@ fn cmd_check(args: &[String]) -> i32 {
         match a.as_str() {
             "--json" => json = true,
             s if s.starts_with("--") => {
-                eprintln!("weir check: unknown flag `{s}`");
+                eprintln!("weir check: unknown option `{s}`");
                 return EXIT_USAGE;
             }
             s => file = Some(s.to_string()),
@@ -169,7 +169,7 @@ fn cmd_list(args: &[String]) -> i32 {
         match a.as_str() {
             "--manifest" => manifest = true,
             s if s.starts_with("--") => {
-                eprintln!("weir list: unknown flag `{s}`");
+                eprintln!("weir list: unknown option `{s}`");
                 return EXIT_USAGE;
             }
             s => file = Some(s.to_string()),
@@ -309,13 +309,13 @@ fn absolutize(p: &str) -> String {
     }
 }
 
-/// `weir FILE [--check | --test | --list | --run] ...`: a script given directly picks
-/// a mode with a flag, since a shebang line leaves no room for a command word. With no
-/// mode flag nothing runs: the script's help is shown, so executing a file never acts
-/// by accident. `weir run FILE` is the explicit command and always runs.
+/// `weir FILE [--run] ...`: a script given directly runs only when `--run` is present,
+/// which is what a `#!/usr/bin/env -S weir --run` line supplies. With no `--run` nothing
+/// runs: the script's help is shown, so executing a file never acts by accident.
+/// `weir run FILE` is the explicit command and always runs. The other modes are the
+/// subcommands `weir check|test|list FILE`.
 fn cmd_script(args: &[String]) -> i32 {
-    let mode = args[1..].iter().find(|a| matches!(a.as_str(), "--check" | "--test" | "--list" | "--run"));
-    let Some(mode) = mode else {
+    if !args[1..].iter().any(|a| a == "--run") {
         if args[1..].iter().any(|a| a == "--help") {
             return cmd_run(args);
         }
@@ -325,18 +325,13 @@ fn cmd_script(args: &[String]) -> i32 {
         help.push("--help".into());
         let code = cmd_run(&help);
         if code == EXIT_OK {
-            eprintln!("\nweir: nothing was run. Add --run to run it (--check, --test and --list are the other modes).");
+            eprintln!("\nweir: nothing was run. Add --run to run it, or use `weir run {}`.", args[0]);
             return EXIT_USAGE;
         }
         return code;
-    };
-    let rest: Vec<String> = args.iter().filter(|a| *a != mode).cloned().collect();
-    match mode.as_str() {
-        "--check" => cmd_check(&rest),
-        "--test" => cmd_test(&rest),
-        "--list" => cmd_list(&rest),
-        _ => cmd_run(&rest),
     }
+    let rest: Vec<String> = args.iter().filter(|a| *a != "--run").cloned().collect();
+    cmd_run(&rest)
 }
 
 // ---- weir run -------------------------------------------------------------
@@ -387,7 +382,7 @@ fn norm_flag(s: &str) -> String {
 
 fn cmd_run(args: &[String]) -> i32 {
     let Some(file) = args.first().filter(|a| !a.starts_with("--")) else {
-        eprintln!("usage: weir run <file> [flow] [--flags]");
+        eprintln!("usage: weir run <file> [flow] [options]");
         return EXIT_USAGE;
     };
     let mut rest: &[String] = &args[1..];
@@ -421,7 +416,7 @@ fn cmd_run(args: &[String]) -> i32 {
                 let names: Vec<&str> = entry.flows().filter(|f| f.vis != Vis::Private).map(|f| f.name.as_str()).collect();
                 eprintln!("weir: {file} has no flow `{n}`; runnable flows: {}", names.join(", "));
                 if matches!(n.as_str(), "check" | "test" | "list" | "run") {
-                    eprintln!("hint: `{n}` is a weir command, not a flow of this script; use `weir {n} {file}` or `{file} --{n}`");
+                    eprintln!("hint: `{n}` is a weir command, not a flow of this script; use `weir {n} {file}`");
                 }
                 return EXIT_USAGE;
             }
@@ -470,7 +465,7 @@ fn cmd_run(args: &[String]) -> i32 {
         let tok = &rest[i];
         i += 1;
         let Some(body) = tok.strip_prefix("--") else {
-            return usage_err(format!("unexpected argument `{tok}`; flags start with `--`"));
+            return usage_err(format!("unexpected argument `{tok}`; options start with `--`"));
         };
         let (name, inline): (String, Option<String>) = match body.split_once('=') {
             Some((n, v)) => (n.to_string(), Some(v.to_string())),
@@ -525,7 +520,7 @@ fn cmd_run(args: &[String]) -> i32 {
                         .map(|s| s.to_string())
                         .collect();
                     valid.extend(specs.iter().chain(sandbox_specs.iter()).map(|s| flag_name(&s.name)));
-                    return usage_err(format!("unknown flag `--{name}`; valid flags: {}", valid.join(" ")));
+                    return usage_err(format!("unknown option `--{name}`; valid options: {}", valid.join(" ")));
                 };
                 if matches!(strip_opt(&spec.ty), Ty::Secret) {
                     return usage_err(format!(
@@ -744,7 +739,7 @@ fn result_json(exit: i32, outs: &[(String, Value)], error: Option<&str>, steps: 
 }
 
 fn print_flow_help(file: &str, flow: &Flow, entry: &File) {
-    println!("usage: weir run {file} {} [flags]\n", flow.name);
+    println!("usage: weir run {file} {} [options]\n", flow.name);
     println!("inputs:");
     let mut any = false;
     let mut show = |i: &InDecl, host: bool| {
@@ -782,7 +777,7 @@ fn print_flow_help(file: &str, flow: &Flow, entry: &File) {
     for o in &flow.outs {
         println!("  {}: {}", o.name, o.ty.show());
     }
-    println!("\nrun flags: --confirm --plan --json --out <name> --ro <path> --deny-exec <name> --no-sandbox");
+    println!("\nrun options: --confirm --plan --json --out <name> --ro <path> --deny-exec <name> --no-sandbox");
 }
 
 fn read_secret(name: &str, flags: &RunFlags) -> Result<Option<Value>, String> {

@@ -1,7 +1,7 @@
 # Command line
 
 ```text
-weir run   <file> [flow] [--flags]     run a flow (the `main` flow by default)
+weir run   <file> [flow] [options]     run a flow (the `main` flow by default)
 weir check <file> [--json]             check a script without running anything
 weir list  <file> [--manifest]         list flows, their inputs and outputs
 weir test  [path]                      run the `test` blocks of a file or folder
@@ -13,26 +13,43 @@ weir --version | --help
 ## Running a script directly
 
 `weir FILE` with a script as the first argument is the form a shebang line uses.
+A script that starts with
 
 ```text
-./script.weir --run [flow] [--flags]    run
-./script.weir --check | --test | --list other modes
-./script.weir                           no mode flag: show the script's help, run nothing (exit 2)
+#!/usr/bin/env -S weir --run
 ```
 
-A script can't be named `check`, `test`, `list`, `run`, `lock`, `sandbox` or
-`help`; use `./check` or `weir run check` for such a file.
+runs when executed: `./script.weir [flow] [options]`. The kernel turns that into
+`weir --run ./script.weir ...`. The `-S` is needed because Linux passes everything
+after the interpreter path as a single argument, and plain `env` would look for a
+program literally named `weir --run`.
 
-## Generated flags
+`--run` is required on purpose. With a plain `#!/usr/bin/env weir` line, executing
+the script only shows its help and exits 2, so a file never acts by accident. You
+can also pass it yourself: `weir script.weir --run`. `weir run script.weir` always runs.
 
-Typed inputs become flags. `in top: int = 10` is `--top <int>` with `10` shown as
-the default. A `list<T>` input takes repeated flags, a `bool` is
-`--flag` / `--no-flag`, and a value that does not parse as its type is exit 2 with
-the flag named. A `path` is a host path, translated through the sandbox mounts.
+The other modes are subcommands only: `weir check FILE`, `weir test FILE` and
+`weir list FILE`.
 
-## Run flags
+Typing `weir check` with no path means the `check` command. A file that happens to
+have a command's name needs a path, as in `weir run ./check`. Executing it directly
+is unaffected, because the kernel passes its full path.
 
-| Flag | Effect |
+## Options generated from inputs
+
+Each input a flow declares becomes a command-line option of the same name.
+
+- `in top: int = 10` becomes `--top <int>`. The default, `10`, is shown in `--help`.
+- A `list<T>` input is given by repeating its option: `--tag a --tag b`.
+- A `bool` input becomes a pair of switches, `--name` and `--no-name`.
+- A value that cannot be read as the input's type is a usage error (exit 2), and the
+  message names the option.
+- A `path` value is a path on the host. Weir translates it to the path inside the
+  sandbox through the sandbox mounts.
+
+## Run options
+
+| Option | Effect |
 |---|---|
 | `--confirm` | also run `confirmable` steps |
 | `--plan` | print what would happen and run nothing (a dry run) |
@@ -43,7 +60,7 @@ the flag named. A `path` is a host path, translated through the sandbox mounts.
 | `--secret-file <name>=<path>` | read a `secret` input from a file (mode 0600) |
 | `--secret-stdin <name>` | read a `secret` input from stdin |
 | `--no-sandbox` | run without the filesystem sandbox (prints a warning) |
-| `--help` | show the flags a script generates from its inputs |
+| `--help` | show the options a script generates from its inputs |
 
 A `secret` input is never accepted on the command line. It comes from
 `WEIR_SECRET_<NAME>`, `--secret-file` or `--secret-stdin`.

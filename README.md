@@ -47,13 +47,13 @@ Rust 1.89 or later, no dependencies.
 ```text
 cargo build --release          # target/release/weir
 cargo test
-weir run   <file> [flow] [--flags]
+weir run   <file> [flow] [options]
 weir check <file> [--json]
 weir test  [path]
 weir list  <file> [--manifest]
 
-./script.weir --run [flow] [--flags]   # a script with a shebang; --check, --test, --list also work
-./script.weir                          # no mode flag: shows the script's help and runs nothing
+./script.weir [flow] [options]         # with the shebang `#!/usr/bin/env -S weir --run`
+./script.weir --run [flow] [options]   # without it; no --run shows the script's help and runs nothing
 ```
 
 ## Status
