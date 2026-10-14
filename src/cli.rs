@@ -27,6 +27,7 @@ Weir: scripts that glue programs together, checked before they run
 
 usage:
   weir run   <file> [flow] [--flags]    run a flow (the `main` flow by default)
+  weir <file> [flow] [--flags]         the same, so a `#!/usr/bin/env weir` script can be executed directly
   weir check <file> [--json]            check a script without running anything
   weir list  <file> [--manifest]        list flows, their inputs and outputs
   weir test  [path]                     run the `test` blocks of a file or folder
@@ -74,7 +75,9 @@ pub fn main_entry() -> i32 {
                 EXIT_USAGE
             }
         },
-        // Internal: the re-executed single-threaded stage described in the design.
+        // `weir script.weir ...` is `weir run script.weir ...`, which is what a
+        // `#!/usr/bin/env weir` line makes the kernel execute.
+        Some(file) if file.ends_with(".weir") || std::path::Path::new(file).is_file() => cmd_run(&args),
         Some(other) => {
             eprintln!("weir: unknown command `{other}`\n\n{USAGE}");
             EXIT_USAGE
