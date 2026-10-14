@@ -708,23 +708,24 @@
 under <code>/usr/share/doc/weir/</code>. The package links the host libc dynamically.</p>
 <div class="admonition note">
 <p class="admonition-title">Platform</p>
-<p>The sandbox needs Linux with unprivileged user namespaces. Weir has only been
-run on Linux (x86_64). On a host that cannot create the sandbox, <code>weir run</code>
-exits 4, and <code>--no-sandbox</code> runs without it and prints a warning.</p>
+<p>The sandbox requires Linux with unprivileged user namespaces enabled. Weir has
+only been tested on Linux (x86_64). If the sandbox cannot be created, <code>weir run</code>
+exits with code 4. Passing <code>--no-sandbox</code> runs the script without a sandbox and
+prints a warning.</p>
 </div>
 <h2 id="run-an-example">Run an example<a class="headerlink" href="#run-an-example" title="Permanent link">&para;</a></h2>
 <p><code>examples/dpkgwatch.weir</code> summarises package activity from <code>/var/log/dpkg.log</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>weir<span class="w"> </span>run<span class="w"> </span>examples/dpkgwatch.weir
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>weir<span class="w"> </span>run<span class="w"> </span>examples/dpkgwatch.weir<span class="w"> </span>--log<span class="w"> </span>/var/log/dpkg.log.2.gz<span class="w"> </span>--since<span class="w"> </span>30d<span class="w"> </span>--top<span class="w"> </span><span class="m">20</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>weir<span class="w"> </span>run<span class="w"> </span>examples/dpkgwatch.weir<span class="w"> </span>--help<span class="w">        </span><span class="c1"># flags generated from the script's inputs</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>weir<span class="w"> </span>run<span class="w"> </span>examples/dpkgwatch.weir<span class="w"> </span>--help<span class="w">        </span><span class="c1"># options generated from the script's inputs</span>
 </code></pre></div>
 <h2 id="make-a-script-executable">Make a script executable<a class="headerlink" href="#make-a-script-executable" title="Permanent link">&para;</a></h2>
-<p>A script can start with <code>#!/usr/bin/env -S weir --run</code>. Executing it then runs it:</p>
+<p>A script that starts with <code>#!/usr/bin/env -S weir --run</code> runs when executed:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./examples/dpkgwatch.weir<span class="w"> </span>--top<span class="w"> </span><span class="m">5</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./examples/dpkgwatch.weir<span class="w"> </span>--check
 </code></pre></div>
-<p>With a plain <code>#!/usr/bin/env weir</code> line, or no mode flag, executing the file only
-shows the script's help and exits 2. Nothing runs by accident.</p>
+<p>With a plain <code>#!/usr/bin/env weir</code> line, executing the file only shows the
+script's help and exits 2. Nothing runs by accident. See
+<a href="../cli/#running-a-script-directly">Command line</a> for why <code>-S</code> is needed.</p>
 <h2 id="write-one">Write one<a class="headerlink" href="#write-one" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>sandbox {
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  mount system
