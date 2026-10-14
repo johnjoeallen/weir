@@ -1,0 +1,32 @@
+[package]
+name = "weir"
+version = "0.1.0"
+edition = "2021"
+description = "Weir: a small interpreted language for scripts that glue programs together"
+license = "GPL-3.0-only"
+
+[[bin]]
+name = "weir"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 2
+lto = true
+strip = true
+
+[package.metadata.deb]
+maintainer = "Weir Maintainers"
+revision = "0"
+section = "devel"
+depends = "$auto, coreutils"
+assets = [
+  ["target/release/weir", "usr/bin/weir", "755"],
+  ["README.md", "usr/share/doc/weir/README.md", "644"],
+  ["PACKAGING.md", "usr/share/doc/weir/PACKAGING.md", "644"],
+  ["LICENSE", "usr/share/doc/weir/LICENSE", "644"],
+  ["docs/DESIGN.md", "usr/share/doc/weir/DESIGN.md", "644"],
+  ["docs/IMPLEMENTATION.md", "usr/share/doc/weir/IMPLEMENTATION.md", "644"],
+  ["examples/*.weir", "usr/share/doc/weir/examples/", "644"],
+]

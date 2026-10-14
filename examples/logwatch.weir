@@ -21,7 +21,7 @@
 // With no flow name, `weir run` runs the `main` flow. Flows that are neither
 // `main` nor `private` can be named on the command line.
 
-use "github:acme/weir-nginx@v1.0.0#parse_access"   // domain parser: a component, not core
+use "./parse_access.weir#parse_access"   // domain parser: a local component, not core
 
 sandbox {
   mount system
@@ -260,11 +260,9 @@ private flow load {
   }
 
   if let m = match {
-    set entries = raw
-      .grep_fixed(pattern: m)
-      .parse_access(on_bad: skip)
+    set entries = parse_access(raw_lines: raw.grep_fixed(pattern: m)).entries
   } else {
-    set entries = raw.parse_access(on_bad: skip)
+    set entries = parse_access(raw_lines: raw).entries
   }
 }
 
@@ -279,13 +277,31 @@ test "status_class buckets by hundreds" {
 
 test "internal addresses are never blocked" {
   fixture dir "/srv/fixture" {
-    file "access.log" text: "10.1.2.3 ... 200\n10.1.2.3 ... 200\n"
-    file "deny.conf"  text: ""
+    file "deny.conf" text: ""
   }
+  stub cat_file yields lines: [
+    "10.1.2.3 - - [10/Oct/2099:13:55:36 +0000] \"GET / HTTP/1.1\" 200 5 \"-\" \"curl\"",
+    "10.1.2.3 - - [10/Oct/2099:13:55:37 +0000] \"GET / HTTP/1.1\" 200 5 \"-\" \"curl\""
+  ]
   let r = run block(
     log: path(text: "/srv/fixture/access.log"),
     deny_file: path(text: "/srv/fixture/deny.conf"),
     threshold: 1
   )
   expect not contains(items: r.blocked, item: "10.1.2.3")
+}
+
+test "an external address over the threshold is listed" {
+  fixture dir "/srv/fixture" {
+    file "deny.conf" text: ""
+  }
+  stub cat_file yields lines: [
+    "203.0.113.9 - - [10/Oct/2099:13:55:36 +0000] \"GET / HTTP/1.1\" 200 5 \"-\" \"curl\""
+  ]
+  let r = run block(
+    log: path(text: "/srv/fixture/access.log"),
+    deny_file: path(text: "/srv/fixture/deny.conf"),
+    threshold: 1
+  )
+  expect contains(items: r.blocked, item: "203.0.113.9")
 }

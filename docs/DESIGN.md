@@ -1,6 +1,6 @@
 # Weir: Design Document
 
-**Status: early design.** Nothing described here is implemented. The language, its syntax and its tooling are all subject to change, and several sections end in open questions. This document is the specification that would precede an implementation.
+**Status: early design, with a reference interpreter.** The language, its syntax and its tooling are all subject to change, and several sections end in open questions. This document is the specification. [IMPLEMENTATION.md](IMPLEMENTATION.md) records what the interpreter in `src/` implements, what it does not, and the decisions made where this document was silent.
 
 ## Introduction
 
@@ -855,7 +855,8 @@ postfix     = primary { "." ident [ "(" [ arg { "," arg } ] ")" ] } ;
                                              (* with parens: a stage (native, filter or run);
                                                 without: member access.
                                                 A line starting with "." continues the previous one. *)
-primary     = call | ident | literal | "(" expr ")" ;
+primary     = call | ident | literal | "(" expr ")" | if_expr ;
+if_expr     = "if" expr block "else" ( block | if_expr ) ;   (* a value: each block ends in an expression *)
 call        = [ "try" ] ident "(" [ arg { "," arg } ] ")" ;
 arg         = ident ":" expr | "..." "$" ident ;
 type        = ident [ "<" type { "," type } ">" ] [ "?" ]

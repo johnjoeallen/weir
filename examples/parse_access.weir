@@ -1,0 +1,98 @@
+// parse_access.weir: turn nginx "combined" access log lines into typed records.
+//
+// A local component, imported by logwatch.weir with:
+//   use "./parse_access.weir#parse_access"
+//
+// Each line looks like:
+//   203.0.113.9 - - [10/Oct/2026:13:55:36 +0000] "GET /a HTTP/1.1" 404 153 "-" "curl/8.5"
+// Splitting on the double quote gives: [0] address and time, [1] request,
+// [2] status and size, [3] referer, [4] ignored, [5] user agent.
+// Lines that do not have that shape are skipped.
+
+// Pure date arithmetic, so no program is started per log line.
+
+fn month_number(name: string) -> int {
+  if name == "Jan" { return 1 }
+  if name == "Feb" { return 2 }
+  if name == "Mar" { return 3 }
+  if name == "Apr" { return 4 }
+  if name == "May" { return 5 }
+  if name == "Jun" { return 6 }
+  if name == "Jul" { return 7 }
+  if name == "Aug" { return 8 }
+  if name == "Sep" { return 9 }
+  if name == "Oct" { return 10 }
+  if name == "Nov" { return 11 }
+  if name == "Dec" { return 12 }
+  return 0
+}
+
+// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's algorithm).
+fn days_from_civil(year: int, month: int, day: int) -> int {
+  let y = if month <= 2 { year - 1 } else { year }
+  let era = y / 400
+  let yoe = y - era * 400
+  let shifted = if month > 2 { month - 3 } else { month + 9 }
+  let doy = (153 * shifted + 2) / 5 + day - 1
+  let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+  return era * 146097 + doe - 719468
+}
+
+// "+0200]" -> 7200, "-0530]" -> -19800
+fn zone_seconds(zone: string) -> int {
+  let sign = if contains(text: zone, part: "-") { 0 - 1 } else { 1 }
+  let digits = replace(text: replace(text: replace(text: zone, from: "]", to: ""), from: "-", to: ""), from: "+", to: "")
+  let n = int(text: digits)
+  let hours = n / 100
+  return sign * (hours * 3600 + (n - hours * 100) * 60)
+}
+
+// head is `addr - - [10/Oct/2026:13:55:36 +0000] `; the result is Unix seconds (UTC).
+fn epoch_of(head: string) -> int {
+  let words = split(text: head, on: " ")
+  let pieces = split(text: replace(text: nth(of: words, index: 3), from: "[", to: ""), on: "/")
+  let tail = split(text: nth(of: pieces, index: 2), on: ":")
+  let days = days_from_civil(
+    year: int(text: nth(of: tail, index: 0)),
+    month: month_number(name: nth(of: pieces, index: 1)),
+    day: int(text: nth(of: pieces, index: 0))
+  )
+  let clock = int(text: nth(of: tail, index: 1)) * 3600 + int(text: nth(of: tail, index: 2)) * 60 + int(text: nth(of: tail, index: 3))
+  return days * 86400 + clock - zone_seconds(zone: nth(of: words, index: 4))
+}
+
+flow parse_access {
+  in  raw_lines: list<string>
+  out entries: list<{ip: string, epoch: int, status: int, path: string, agent: string}>
+
+  set entries = raw_lines
+    .filter(where: count(of: split(text: it, on: "\"")) >= 6)
+    .map(to: {
+      ip: nth(of: split(text: nth(of: split(text: it, on: "\""), index: 0), on: " "), index: 0),
+      epoch: epoch_of(head: nth(of: split(text: it, on: "\""), index: 0)),
+      status: int(text: nth(of: split(text: trim(text: nth(of: split(text: it, on: "\""), index: 2)), on: " "), index: 0)),
+      path: nth(of: split(text: nth(of: split(text: it, on: "\""), index: 1), on: " "), index: 1),
+      agent: nth(of: split(text: it, on: "\""), index: 5)
+    })
+}
+
+test "parse_access reads address, time, status, path and agent" {
+  let r = run parse_access(raw_lines: [
+    "203.0.113.9 - - [10/Oct/2026:13:55:36 +0000] \"GET /a HTTP/1.1\" 404 153 \"-\" \"curl/8.5\"",
+    "not a log line"
+  ])
+  expect count(of: r.entries) == 1
+  expect first(of: r.entries).ip == "203.0.113.9"
+  expect first(of: r.entries).epoch == 1791640536
+  expect first(of: r.entries).status == 404
+  expect first(of: r.entries).path == "/a"
+  expect first(of: r.entries).agent == "curl/8.5"
+}
+
+test "epoch arithmetic" {
+  expect days_from_civil(year: 1970, month: 1, day: 1) == 0
+  expect days_from_civil(year: 2000, month: 3, day: 1) == 11017
+  expect zone_seconds(zone: "+0200]") == 7200
+  expect zone_seconds(zone: "-0530]") == 0 - 19800
+  expect epoch_of(head: "h - - [01/Jan/1970:01:00:00 +0100] ") == 0
+}

@@ -1,0 +1,196 @@
+#!/usr/bin/env weir
+//
+// dpkgwatch.weir: summarise package activity from a dpkg log.
+//
+//   weir run dpkgwatch.weir --log /var/log/dpkg.log
+//   weir run dpkgwatch.weir --log /var/log/dpkg.log.2.gz --since 30d --top 20
+//   weir run dpkgwatch.weir --log /var/log/dpkg.log --match golang
+//
+// Read-only: it never writes anything, so it needs no confirmable steps.
+// Each dpkg.log line is "YYYY-MM-DD HH:MM:SS <action> <package> <old> <new>",
+// for example "2026-10-06 17:19:34 install lm-studio:amd64 <none> 0.4.25+1".
+// Lines that are not package actions ("startup ...", "status ...", "trigproc ...")
+// are skipped, as are lines that do not split into the expected fields.
+
+sandbox {
+  mount system
+  mount "/var/log" ro                // dpkg.log and its rotated copies
+}
+
+// ---------------------------------------------------------------------------
+// Declared filters
+// ---------------------------------------------------------------------------
+
+filter cat_file {
+  program "cat"
+  in file: path
+  args ["--", file]
+  sandbox {
+    see system
+    see "/var/log" ro
+  }
+  takes none
+  yields lines
+}
+
+filter zcat_file {
+  program "zcat"
+  in file: path
+  args ["--", file]
+  sandbox {
+    see system
+    see "/var/log" ro
+  }
+  takes none
+  yields lines
+}
+
+filter date_epoch {
+  program "date"
+  in stamp: string
+  args ["-u", "-d", stamp, "+%s"]    // GNU date; stamp is "YYYY-MM-DD HH:MM:SS"
+  sandbox { see system }
+  takes none
+  yields lines
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+// Actions that change what is installed. "status", "startup" and "trigproc"
+// describe dpkg's internal state machine and are noise for a summary.
+fn is_change(action: string) -> bool {
+  return action == "install"
+      or action == "upgrade"
+      or action == "remove"
+      or action == "purge"
+}
+
+// "lm-studio:amd64" -> "lm-studio"
+fn package_name(qualified: string) -> string {
+  return first(of: split(text: qualified, on: ":"))
+}
+
+fn row(key: string, count: int) -> string {
+  return "${key}\t${count}"
+}
+
+// ---------------------------------------------------------------------------
+// Entry flow
+// ---------------------------------------------------------------------------
+
+main flow report {
+  in  log: path
+  in  since: duration = 7d
+  in  top: int = 10
+  in  match: string?
+  out changes: int
+
+  let events = load(log: log, match: match).events
+    .filter(where: it.epoch >= now_epoch() - since.seconds)
+
+  if count(of: events) == 0 {
+    fail message: "no package changes in the last ${since}"
+  }
+
+  summary {
+    print(text: "== changes by action ==")
+    let actions = events
+      .count_by(key: it.action)
+      .sort_by(key: it.count, order: desc)
+    for a in actions {
+      print(text: row(key: a.key, count: a.count))
+    }
+
+    print(text: "== most-changed packages ==")
+    let busy = events
+      .count_by(key: it.package)
+      .sort_by(key: it.count, order: desc)
+      .take(n: top)
+    for p in busy {
+      print(text: row(key: p.key, count: p.count))
+    }
+
+    print(text: "== busiest days ==")
+    let days = events
+      .count_by(key: it.day)
+      .sort_by(key: it.count, order: desc)
+      .take(n: top)
+    for d in days {
+      print(text: row(key: d.key, count: d.count))
+    }
+
+    print(text: "== removed or purged ==")
+    let gone = events
+      .filter(where: it.action == "remove" or it.action == "purge")
+      .map(to: it.package)
+      .unique()
+      .take(n: top)
+    for g in gone {
+      print(text: g)
+    }
+  }
+
+  set changes = events.count()
+}
+
+// ---------------------------------------------------------------------------
+// Private: read plain or gzipped logs into typed records
+// ---------------------------------------------------------------------------
+
+private flow load {
+  in  log: path
+  in  match: string?
+  out events: list<{day: string, epoch: int, action: string, package: string}>
+
+  let raw: list<string> = if extension(of: log) == "gz" {
+    zcat_file(file: log)
+  } else {
+    cat_file(file: log)
+  }
+
+  let parsed = raw
+    .map(to: split(text: it, on: " "))
+    .filter(where: count(of: it) >= 5)
+    .filter(where: is_change(action: nth(of: it, index: 2)))
+    .map(to: {
+      day: nth(of: it, index: 0),
+      epoch: int(text: first(of: date_epoch(stamp: "${nth(of: it, index: 0)} ${nth(of: it, index: 1)}"))),
+      action: nth(of: it, index: 2),
+      package: package_name(qualified: nth(of: it, index: 3))
+    })
+
+  if let m = match {
+    set events = parsed.filter(where: contains(text: it.package, part: m))
+  } else {
+    set events = parsed
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: weir test dpkgwatch.weir
+// ---------------------------------------------------------------------------
+
+test "package_name drops the architecture" {
+  expect package_name(qualified: "lm-studio:amd64") == "lm-studio"
+  expect package_name(qualified: "coreutils") == "coreutils"
+}
+
+test "only state-changing actions count" {
+  expect is_change(action: "install")
+  expect is_change(action: "purge")
+  expect not is_change(action: "status")
+  expect not is_change(action: "trigproc")
+}
+
+test "report counts installs and ignores status lines" {
+  stub cat_file yields lines: [
+    "2026-10-06 17:19:34 install foo:amd64 <none> 1.0",
+    "2026-10-06 17:19:34 status installed foo:amd64 1.0",
+    "2026-10-06 17:19:35 remove foo:amd64 1.0 <none>"
+  ]
+  stub date_epoch yields lines: ["1791306000"]   // every event gets the same timestamp
+  let r = run report(log: path(text: "/var/log/dpkg.log"), since: 3650d)
+  expect r.changes == 2
+}
