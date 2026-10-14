@@ -16,6 +16,10 @@ match) and commits that packaging-only bump. It refuses to run if `Cargo.toml` o
 `src/cli.rs` has uncommitted changes. Semantic version changes are made with the
 source changes, before packaging.
 
+To cut a release, change `version` in `Cargo.toml`, commit it, tag that commit
+(`git tag -a vX.Y.Z`), push the commit and the tag, and then build the package.
+The tag, the version in `Cargo.toml` and `weir --version` should all agree.
+
 The package is created under `target/debian/*.deb`.
 
 ## Install
