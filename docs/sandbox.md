@@ -15,9 +15,25 @@ sandbox {
 ```
 
 A filter can restrict what its program sees by adding `see` lines to its declaration.
-The program then sees only the paths listed there, and only those that the script's
-own `sandbox` block mounted. Only the script you run has a `sandbox` block. A script
-it imports with `use` can't mount anything, so imported code never sees more than the
+This one runs `nginx -t`, which needs the config and its own error log:
+
+```weir
+filter nginx_test {
+  program "nginx"
+  args ["-t"]
+  see system
+  see "/etc/nginx" ro
+  see "/var/log/nginx" rw       // nginx -t opens its error log
+  takes none
+  yields none
+}
+```
+
+The program sees only the paths listed there, and only those that the script's own
+`sandbox` block mounted. A filter with no `see` lines sees everything the script mounted.
+A `see` line can only narrow: `see "/etc/nginx" rw` would be an error here, because the
+script mounts it read-only. Only the script you run has a `sandbox` block. A script it
+imports with `use` can't mount anything, so imported code never sees more than the
 script you run allows.
 
 ## How it is enforced
