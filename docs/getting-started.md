@@ -54,18 +54,23 @@ script's help and exits 2. Nothing runs by accident. See
 
 ## Small example
 
-This script prints the lines of `/etc/hosts` that are not comments. It can see
-`/etc` read-only and nothing else, and it has a test that stubs the `cat` program.
+The script as a whole can see `/etc` and `/var/log`, both read-only. Each of its two
+filters gets a smaller view: `cat_hosts` sees `/etc` but not `/var/log`, and
+`count_lines` sees `/var/log` but not `/etc`. The test stubs both programs, so it
+runs nothing.
 
 ```weir
 #!/usr/bin/env -S weir --run
 
+// The script as a whole can see /etc and /var/log, both read-only.
 sandbox {
   mount system
   mount "/etc" ro
+  mount "/var/log" ro
 }
 
-filter cat_file {
+// This program can read /etc but has no view of /var/log at all.
+filter cat_hosts {
   program "cat"
   in file: path
   args ["--", file]
@@ -77,20 +82,35 @@ filter cat_file {
   yields lines
 }
 
+// This one is the other way round: it can read /var/log but not /etc.
+filter count_lines {
+  program "wc"
+  in file: path
+  args ["-l", file]
+  sandbox {
+    see system
+    see "/var/log" ro
+  }
+  takes none
+  yields lines
+}
+
 main flow hosts {
   in  file: path = path(text: "/etc/hosts")
   out n: int
 
-  let rows = cat_file(file: file)
+  let rows = cat_hosts(file: file)
     .filter(where: not starts_with(text: it, prefix: "#"))
   for r in rows {
     print(text: r)
   }
+  print(text: "dpkg.log: ${first(of: count_lines(file: path(text: "/var/log/dpkg.log")))}")
   set n = rows.count()
 }
 
 test "counts the lines that are not comments" {
-  stub cat_file yields lines: ["# comment", "127.0.0.1 localhost"]
+  stub cat_hosts yields lines: ["# comment", "127.0.0.1 localhost"]
+  stub count_lines yields lines: ["42 /var/log/dpkg.log"]
   let r = run hosts()
   expect r.n == 1
 }
@@ -100,8 +120,19 @@ Save it as `hosts.weir` and make it executable with `chmod +x hosts.weir`. Then:
 
 ```bash
 weir check hosts.weir     # static check, nothing runs
-weir test  hosts.weir     # run the test block with the program stubbed
+weir test  hosts.weir     # run the test block with the programs stubbed
 ./hosts.weir              # run it (the shebang line supplies --run)
 ```
+
+To see the restriction work, point the first filter at a file it can't see:
+
+```bash
+./hosts.weir --file /var/log/dpkg.log
+# error in hosts: ExecError: `cat -- /var/log/dpkg.log` exited with code 1:
+#   cat: /var/log/dpkg.log: No such file or directory
+```
+
+The file exists on the host and the script mounts it, but `cat_hosts` has no
+`/var/log` in its view.
 
 The full language is described in the [design document](DESIGN.md).
