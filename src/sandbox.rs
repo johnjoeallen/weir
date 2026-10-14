@@ -173,6 +173,11 @@ mod linux {
 
     fn make_dir_or_file_target(src: &str, dst: &str) -> Result<(), String> {
         let meta = std::fs::metadata(src).map_err(|e| format!("{src}: {e}"))?;
+        // Already there: the destination lies inside an earlier mount of the same host tree,
+        // possibly a read-only one, where creating it would fail.
+        if std::fs::metadata(dst).map(|d| d.is_dir() == meta.is_dir()).unwrap_or(false) {
+            return Ok(());
+        }
         if meta.is_dir() {
             std::fs::create_dir_all(dst).map_err(|e| format!("cannot create mount point {dst}: {e}"))
         } else {

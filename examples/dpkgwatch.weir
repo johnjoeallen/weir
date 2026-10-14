@@ -72,6 +72,10 @@ fn package_name(qualified: string) -> string {
   return first(of: split(text: qualified, on: ":"))
 }
 
+// Formats one line of the report: the key, a tab, then the count, for example
+// "google-chrome-stable<TAB>3". The summary prints every table through this, so the
+// columns always line up the same way. (This is output formatting, not parsing: the
+// parsing of the log itself happens in `load` at the bottom of the file.)
 fn row(key: string, count: int) -> string {
   return "${key}\t${count}"
 }
@@ -144,16 +148,38 @@ private flow load {
   in  match: string?
   out events: list<{day: string, epoch: int, action: string, package: string}>
 
+  // Read the whole file as a list of lines. A name ending in ".gz" is a rotated, compressed
+  // log, so it goes through `zcat`; anything else goes through `cat`. Both branches give the
+  // same type, a list of lines, so the code after this does not care which one ran.
   let raw: list<string> = if extension(of: log) == "gz" {
     zcat_file(file: log)
   } else {
     cat_file(file: log)
   }
 
+  // Turn each text line into a typed record, one step at a time. A dpkg.log line is
+  // space-separated: "2026-10-06 17:19:34 install lm-studio:amd64 <none> 0.4.25+1".
+  //   field 0 = date, 1 = time, 2 = action, 3 = package (with architecture), 4 = old
+  //   version, 5 = new version.
+  // Within each step `it` is the current item.
   let parsed = raw
+    // 1. Split every line on single spaces. The list of lines becomes a list of lists of
+    //    words, and `split` cannot fail, so a strange line just gives few words.
     .map(to: split(text: it, on: " "))
+    // 2. Drop lines too short to be a package action. "startup archives unpack" has only
+    //    three words, so asking for word 3 on it would be an error; this keeps it out first.
     .filter(where: count(of: it) >= 5)
+    // 3. Keep only the actions that change what is installed. dpkg also logs "status ..."
+    //    and "trigproc ..." lines that describe its internal state and would double-count.
     .filter(where: is_change(action: nth(of: it, index: 2)))
+    // 4. Build one record per surviving line, picking the words out by position:
+    //      day     "2026-10-06", kept as text so it can be counted per day
+    //      epoch   Unix seconds, worked out by `date` from "<date> <time>" so that
+    //              `--since` can compare times as numbers; `int` turns its text output
+    //              into a number
+    //      action  "install", "upgrade", "remove" or "purge"
+    //      package the name with ":amd64" removed, so one package is not counted twice
+    //              under two architectures
     .map(to: {
       day: nth(of: it, index: 0),
       epoch: int(text: first(of: date_epoch(stamp: "${nth(of: it, index: 0)} ${nth(of: it, index: 1)}"))),
@@ -161,6 +187,9 @@ private flow load {
       package: package_name(qualified: nth(of: it, index: 3))
     })
 
+  // `match` is an optional input: it is absent unless --match was given. `if let` runs the
+  // first branch only when it is present, and `m` is then a plain string. The test is a
+  // plain, case-sensitive substring match against the package name, not a regular expression.
   if let m = match {
     set events = parsed.filter(where: contains(text: it.package, part: m))
   } else {

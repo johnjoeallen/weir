@@ -313,3 +313,78 @@ fn a_leading_run_flag_before_the_file_works_as_a_shebang_line() {
     assert_eq!(weir_args(&["check", s(&p)]).code, 0);
     assert_eq!(weir_args(&[s(&p), "--check"]).code, 2);
 }
+
+#[test]
+fn a_read_only_mount_may_contain_the_system_files() {
+    // `mount system` puts /etc/hosts, /etc/resolv.conf and friends under a read-only /etc.
+    let p = script("sandbox {\n  mount system\n  mount \"/etc\" ro\n}\nmain flow a {\n  out r: int\n  set r = 1\n}\n");
+    let o = weir_args(&["run", s(&p)]);
+    if o.stderr.contains("could not be created") && !o.stderr.contains("mount point") {
+        return; // this host cannot create the sandbox
+    }
+    assert_eq!(o.code, 0, "{}", o.stderr);
+}
+
+#[test]
+fn a_filter_sees_only_the_paths_in_its_see_block() {
+    let base = scratch().join(format!("weir-see-it-{}", std::process::id()));
+    let (a, b) = (base.join("a"), base.join("b"));
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    std::fs::write(a.join("one.txt"), "visible\n").unwrap();
+    std::fs::write(b.join("two.txt"), "narrowed away\n").unwrap();
+    let src = format!(
+        r#"sandbox {{
+  mount system
+  mount "{a}" ro
+  mount "{b}" rw
+}}
+filter wide {{
+  program "sh"
+  in script: string
+  args ["-c", script]
+  yields lines
+  ok_codes [0, 1, 2]
+}}
+filter narrow {{
+  program "sh"
+  in script: string
+  args ["-c", script]
+  sandbox {{
+    see system
+    see "{a}" ro
+  }}
+  yields lines
+  ok_codes [0, 1, 2]
+}}
+main flow a {{
+  out script_sees: list<string>
+  out filter_sees: list<string>
+  out filter_hidden: list<string>
+  out filter_write: list<string>
+  set script_sees = wide(script: "cat {b}/two.txt")
+  set filter_sees = narrow(script: "cat {a}/one.txt")
+  set filter_hidden = narrow(script: "{{ cat {b}/two.txt; }} 2>&1")
+  set filter_write = narrow(script: "{{ echo x > {a}/new.txt; }} 2>&1")
+}}
+"#,
+        a = a.display(),
+        b = b.display()
+    );
+    let p = script(&src);
+    let o = weir_args(&["run", s(&p), "--json"]);
+    if o.code == 4 {
+        eprintln!("skipped: this host cannot create the sandbox: {}", o.stderr.trim());
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    // the script's other programs still see the second mount
+    assert!(o.stdout.contains("\"script_sees\": [\n      \"narrowed away\""), "{}", o.stdout);
+    assert!(o.stdout.contains("\"filter_sees\": [\n      \"visible\""), "{}", o.stdout);
+    // the narrowed filter cannot see it, although the script mounted it
+    assert!(o.stdout.matches("narrowed away").count() == 1, "the narrowed filter read a path outside its `see`: {}", o.stdout);
+    assert!(o.stdout.contains("No such file"), "{}", o.stdout);
+    // and a ro `see` stays read-only
+    assert!(o.stdout.to_lowercase().contains("read-only"), "{}", o.stdout);
+    assert!(!a.join("new.txt").exists());
+}

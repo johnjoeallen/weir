@@ -31,6 +31,31 @@ its own `/proc`. A `ro` mount rejects writes. Other host directories next to a
 mounted one are invisible. `--ro` and `--deny-exec` narrow the sandbox for a single
 run, and `--no-sandbox` removes it (with a warning).
 
+## A smaller view for one program
+
+A filter's `sandbox { see ... }` block gives its program a second, smaller root
+inside the script's sandbox. Just before the program starts, Weir:
+
+1. gives the child process its own copy of the mount table (a nested mount namespace);
+2. builds a fresh tmpfs root and bind-mounts only the `see` paths into it, as `ro` or
+   `rw` as written, with a private `/tmp`, a minimal `/dev` and `/proc`;
+3. calls `pivot_root` into that root and detaches the previous one;
+4. starts the program.
+
+```text
+host
+ └─ the script's sandbox      user, mount and PID namespaces, pivot_root
+     └─ one filter's view     nested mount namespace, pivot_root, only the `see` paths
+```
+
+Paths the script mounted but the filter doesn't `see` aren't in that program's
+view at all. The script, and any other filter, still sees them. A `see` can only
+narrow: it can't name a path the script didn't mount (`E-SEE-UNMOUNTED`), and
+`see "/x" ro` makes a `rw` mount read-only for that program.
+
+The nested view changes the filesystem only. The program stays in the same user
+and PID namespaces as the script.
+
 ## Limits
 
 - Linux with unprivileged user namespaces only. Tested on Linux 6.12, x86_64.

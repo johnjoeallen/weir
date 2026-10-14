@@ -52,9 +52,14 @@ With a plain `#!/usr/bin/env weir` line, executing the file only shows the
 script's help and exits 2. Nothing runs by accident. See
 [Command line](cli.md#running-a-script-directly) for why `-S` is needed.
 
-## Write one
+## Small example
+
+This script prints the lines of `/etc/hosts` that are not comments. It can see
+`/etc` read-only and nothing else, and it has a test that stubs the `cat` program.
 
 ```weir
+#!/usr/bin/env -S weir --run
+
 sandbox {
   mount system
   mount "/etc" ro
@@ -64,31 +69,39 @@ filter cat_file {
   program "cat"
   in file: path
   args ["--", file]
-  sandbox { see system  see "/etc" ro }
+  sandbox {
+    see system
+    see "/etc" ro
+  }
   takes none
   yields lines
 }
 
 main flow hosts {
-  in  match: string?
+  in  file: path = path(text: "/etc/hosts")
   out n: int
 
-  let rows = cat_file(file: path(text: "/etc/hosts")).filter(where: not starts_with(text: it, prefix: "#"))
-  for r in rows { print(text: r) }
+  let rows = cat_file(file: file)
+    .filter(where: not starts_with(text: it, prefix: "#"))
+  for r in rows {
+    print(text: r)
+  }
   set n = rows.count()
 }
 
-test "counts non-comment lines" {
+test "counts the lines that are not comments" {
   stub cat_file yields lines: ["# comment", "127.0.0.1 localhost"]
   let r = run hosts()
   expect r.n == 1
 }
 ```
 
+Save it as `hosts.weir` and make it executable with `chmod +x hosts.weir`. Then:
+
 ```bash
-weir check hosts.weir
-weir test  hosts.weir
-weir run   hosts.weir
+weir check hosts.weir     # static check, nothing runs
+weir test  hosts.weir     # run the test block with the program stubbed
+./hosts.weir              # run it (the shebang line supplies --run)
 ```
 
 The full language is described in the [design document](DESIGN.md).
