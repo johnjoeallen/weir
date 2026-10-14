@@ -13,10 +13,11 @@
 // "skipped: unconfirmed", unless the caller passes --confirm.
 //
 // The sandbox block below defines the filesystem this script runs in. The interpreter and
-// every program it starts live inside it, so every path in this file is a path inside the
-// sandbox, and nothing that is not mounted exists. --log and other command-line paths are
-// host paths and are translated through the mounts. A filter's `sandbox { see ... }` clause
-// narrows what its program sees. Pass --no-sandbox only on hosts where a sandbox cannot be created.
+// every program it starts run inside that sandbox. Every path in this file is therefore a
+// path inside the sandbox, and anything that is not mounted does not exist. The paths given
+// as command-line options (such as --log) are host paths, and are translated through the
+// mounts. A filter's `sandbox { see ... }` clause narrows what its program sees. Use
+// --no-sandbox only on a host where a sandbox cannot be created.
 //
 // With no flow name, `weir run` runs the `main` flow. Flows that are neither
 // `main` nor `private` can be named on the command line.

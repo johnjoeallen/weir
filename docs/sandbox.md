@@ -1,9 +1,9 @@
 # The sandbox
 
-The `sandbox` block at the top of the entry file defines the filesystem the
-script runs in. The interpreter and every program it starts live inside it, so
-every path in the file is a path inside the sandbox, and nothing that is not
-mounted exists.
+The `sandbox` block at the top of the entry file defines the filesystem the script
+runs in. The interpreter and every program it starts run inside that sandbox.
+Every path in the script is therefore a path inside the sandbox, and anything that
+is not mounted does not exist.
 
 ```weir
 sandbox {
@@ -13,8 +13,10 @@ sandbox {
 }
 ```
 
-A filter narrows what its own program sees with `sandbox { see ... }`. A
-component cannot widen what the entry file allows.
+A filter can restrict what its program sees by adding a `sandbox { see ... }` block.
+The program then sees only the paths listed there, and only those that the entry
+file mounted. An imported component can't mount anything of its own, so it can never
+see more than the entry file allows.
 
 ## How it is enforced
 
