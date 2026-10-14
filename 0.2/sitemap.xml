@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/DESIGN/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/IMPLEMENTATION/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/cli/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/commands/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/examples/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/getting-started/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+    <url>
+         <loc>https://johnjoeallen.github.io/weir/0.2/sandbox/</loc>
+         <lastmod>2026-10-14</lastmod>
+    </url>
+</urlset>
