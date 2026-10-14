@@ -591,18 +591,20 @@
 
 
 <h1 id="the-sandbox">The sandbox<a class="headerlink" href="#the-sandbox" title="Permanent link">&para;</a></h1>
-<p>The <code>sandbox</code> block at the top of the entry file defines the filesystem the
-script runs in. The interpreter and every program it starts live inside it, so
-every path in the file is a path inside the sandbox, and nothing that is not
-mounted exists.</p>
+<p>The <code>sandbox</code> block at the top of the entry file defines the filesystem the script
+runs in. The interpreter and every program it starts run inside that sandbox.
+Every path in the script is therefore a path inside the sandbox, and anything that
+is not mounted does not exist.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>sandbox {
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  mount system                      // the usual program directories, read-only
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  mount "/var/log/nginx" rw
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  mount "/etc/nginx" ro
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>}
 </code></pre></div>
-<p>A filter narrows what its own program sees with <code>sandbox { see ... }</code>. A
-component cannot widen what the entry file allows.</p>
+<p>A filter can restrict what its program sees by adding a <code>sandbox { see ... }</code> block.
+The program then sees only the paths listed there, and only those that the entry
+file mounted. An imported component can't mount anything of its own, so it can never
+see more than the entry file allows.</p>
 <h2 id="how-it-is-enforced">How it is enforced<a class="headerlink" href="#how-it-is-enforced" title="Permanent link">&para;</a></h2>
 <p>On Linux the interpreter creates user, mount and PID namespaces without root,
 builds a tmpfs root from bind mounts, and calls <code>pivot_root</code>. This is not a
