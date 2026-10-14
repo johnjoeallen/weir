@@ -27,7 +27,7 @@ under `/usr/share/doc/weir/`. The package links the host libc dynamically.
 !!! note "Platform"
     The sandbox requires Linux with unprivileged user namespaces enabled. Weir has
     only been tested on Linux (x86_64). If the sandbox cannot be created, `weir run`
-    exits with code 4. Passing `--no-sandbox` runs the script without a sandbox and
+    exits with return code 4. Passing `--no-sandbox` runs the script without a sandbox and
     prints a warning.
 
 ## Run an example
@@ -49,7 +49,7 @@ A script that starts with `#!/usr/bin/env -S weir --run` runs when executed:
 ```
 
 With a plain `#!/usr/bin/env weir` line, executing the file only shows the
-script's help and exits 2. Nothing runs by accident. See
+script's help and exits with return code 2. Nothing runs by accident. See
 [Command line](cli.md#running-a-script-directly) for why `-S` is needed.
 
 ## Small example
@@ -69,7 +69,7 @@ sandbox {
   mount "/var/log" ro
 }
 
-// This program can read /etc but has no view of /var/log at all.
+// This filter can see /etc but not /var/log.
 filter cat_hosts {
   program "cat"
   in file: path
@@ -82,7 +82,7 @@ filter cat_hosts {
   yields lines
 }
 
-// This one is the other way round: it can read /var/log but not /etc.
+// This filter can see /var/log but not /etc.
 filter count_lines {
   program "wc"
   in file: path

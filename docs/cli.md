@@ -25,7 +25,7 @@ after the interpreter path as a single argument, and plain `env` would look for 
 program literally named `weir --run`.
 
 `--run` is required on purpose. With a plain `#!/usr/bin/env weir` line, executing
-the script only shows its help and exits 2, so a file never acts by accident. You
+the script only shows its help and exits with return code 2, so a file never acts by accident. You
 can also pass it yourself: `weir script.weir --run`. `weir run script.weir` always runs.
 
 The other modes are subcommands only: `weir check FILE`, `weir test FILE` and
@@ -42,8 +42,8 @@ Each input a flow declares becomes a command-line option of the same name.
 - `in top: int = 10` becomes `--top <int>`. The default, `10`, is shown in `--help`.
 - A `list<T>` input is given by repeating its option: `--tag a --tag b`.
 - A `bool` input becomes a pair of switches, `--name` and `--no-name`.
-- A value that cannot be read as the input's type is a usage error (exit 2), and the
-  message names the option.
+- A value that cannot be read as the input's type is a usage error. `weir` exits with
+  return code 2, and the message names the option.
 - A `path` value is a path on the host. Weir translates it to the path inside the
   sandbox through the sandbox mounts.
 
@@ -65,7 +65,7 @@ Each input a flow declares becomes a command-line option of the same name.
 A `secret` input is never accepted on the command line. It comes from
 `WEIR_SECRET_<NAME>`, `--secret-file` or `--secret-stdin`.
 
-## Exit codes
+## Return codes
 
 | Code | Meaning |
 |---|---|

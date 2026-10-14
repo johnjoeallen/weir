@@ -35,7 +35,7 @@ main flow report {
 $ weir run examples/dpkgwatch.weir --log /var/log/dpkg.log --since 30d
 ```
 
-- **Typed inputs become the command line.** `--help` is generated, and bad values are rejected before step one (exit 2).
+- **Typed inputs become the command line.** `--help` is generated, and bad values are rejected before step one (`weir` exits with return code 2).
 - **Commands take argument lists, not strings.** There is no shell, so quoting bugs cannot be expressed.
 - **Every script declares the filesystem it runs in.** The `sandbox` block is enforced with Linux namespaces, including for every program the script starts. Nothing prompts.
 - **`weir check`** reports problems in terms of what you wrote, with a stable code and a fix hint, before anything runs.

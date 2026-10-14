@@ -39,7 +39,7 @@ main flow report {
 ## What you get
 
 - **Typed inputs become the command line.** `--help` is generated, and a bad
-  value is rejected before the first step runs (exit 2).
+  value is rejected before the first step runs (`weir` exits with return code 2).
 - **Commands take argument lists, not strings.** There is no shell, so quoting
   bugs cannot be written.
 - **Every script declares the filesystem it runs in.** The `sandbox` block is

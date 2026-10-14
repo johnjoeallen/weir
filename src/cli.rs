@@ -47,7 +47,7 @@ run options:
   --no-sandbox         run without the filesystem sandbox (see docs/DESIGN.md 7.6)
   --help               show the options a script generates from its inputs
 
-exit codes: 0 success, 1 flow failure, 2 usage error, 3 check error, 4 capability denied
+return codes: 0 success, 1 flow failure, 2 usage error, 3 check error, 4 capability denied
 ";
 
 pub fn main_entry() -> i32 {
