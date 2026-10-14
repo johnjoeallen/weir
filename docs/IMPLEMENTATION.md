@@ -2,7 +2,7 @@
 
 This describes the reference interpreter in `src/`, measured against [DESIGN.md](DESIGN.md). It is Rust with no dependencies, and Linux is the only platform on which it has been run.
 
-Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 15 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
+Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 26 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
 
 ## What is built
 
@@ -13,12 +13,13 @@ Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 15 integration tests
 | 4. Flow anatomy | `in`, `out`, `requires`, `lock`, `finally`; steps with `when`, `confirmable`, `as` labels; the repeated-step label rule (`E-STEP-LABEL`, `E-DUP-STEP`). |
 | 5. Types | All types parse. Values are checked against their declared type at run time (`let x: T`, flow and fn inputs, outputs, `set`). `map<K,V>` exists as a type only: there is no map literal. |
 | 6. Commands and errors | Argument lists, no shell. `ExecError`, `CapabilityError`, `IoError`, `ParseError`, typed `catch`, `try` as an attempt record, `fail`. `Timeout` is reserved and never thrown. |
-| 7. Sandbox | Real: user + mount + PID namespaces, a tmpfs root populated with bind mounts, `pivot_root`, private `/tmp`, minimal `/dev`, `/proc`. Host-to-inside path translation, `ro`/`rw` enforcement (also reported by the interpreter with the mount named), `see` narrowing in a nested mount namespace, `--ro`, `--deny-exec`, `--no-sandbox`. Exit 4 if it cannot be created. Static checks `E-SANDBOX-EXEC-UNREACHABLE`, `E-SANDBOX-LOCK-UNSHARED`, `E-SANDBOX-NOT-ENTRY`, `E-SEE-UNMOUNTED`, `W-NO-SANDBOX`. |
+| 7. Sandbox | Real: user + mount + PID namespaces, a tmpfs root populated with bind mounts, `pivot_root`, private `/tmp`, minimal `/dev`, `/proc`. Host-to-inside path translation, `ro`/`rw` enforcement (also reported by the interpreter with the mount named), `see` lines on a filter and `within` blocks, both narrowing in a nested mount namespace, `--ro`, `--deny-exec`, `--no-sandbox`. Exit 4 if it cannot be created. Static checks `E-SANDBOX-EXEC-UNREACHABLE`, `E-SANDBOX-LOCK-UNSHARED`, `E-SANDBOX-NOT-ENTRY`, `E-SEE-UNMOUNTED`, `W-NO-SANDBOX`. |
 | 8. Calls | Named arguments only; `W-DEFAULT-ARG` for literal defaults, with `// weir:allow CODE`. |
 | 9. Pipelines | `lines map filter take unique count count_by sort_by`, declared filters as stages, `it`. |
 | 10. Components | Local `use "./path.weir"` and `use "./path.weir#flow"`. Private flows are not importable. |
 | 11. CLI | Flags generated from inputs, `--help`, `--confirm`, `--plan`, `--json`, `--out`, secrets from `WEIR_SECRET_<NAME>`, `--secret-file` (mode checked) and `--secret-stdin`; a secret on argv is exit 2. |
 | 12. Testing | `fixture dir`, `stub`, `expect`, `run <flow>(...)`. |
+| 7.3.1 Scoped views | `within <items> { ... }` as a statement or a value, `return`, nesting by intersection, built-ins held to the view (`exists` is `false`), `E-WITHIN-NO-RETURN`, `E-FN-IMPURE`. A filter writes `see` lines directly; the old `sandbox { see }` form in a filter is `E-FILTER-SANDBOX`. |
 | 15, 16. Grammar, reserved words | As sketched, plus the additions below. |
 
 Checker rules beyond those named above: unknown names, calls, stages and arguments with "did you mean" hints; missing, duplicate and unknown arguments; literal argument and default type mismatches; `it` outside a stage; assignment to a `let`; optional values used without `if let`; `secret` values used outside `env`/stdin; `fn` purity; `requires` purity; `W-SHELL-STRING`, `W-DESTRUCTIVE-PROGRAM`, `E-DYNAMIC-CMD`; filters that cannot start or join a pipeline; `catch` of a name that is not an error type. A failed import suppresses the follow-on "unknown name" errors it would cause.
@@ -57,13 +58,14 @@ These are the places a reader of the design could reasonably have expected somet
 16. **Step identity.** A flow call is named after the flow, an inline block after its name, and a non-flow expression statement that carries `when` or `confirmable` is `line N`.
 17. **Imported flows run under the entry file's sandbox,** and resolve their own filters and fns within their own file.
 18. **Test stubs are named in the entry file.** A `stub` can only name a filter declared in the file the test is in, and `lock` is not taken in test mode. A component that must be testable from its importer should not depend on a program; `parse_access.weir` does its date arithmetic in pure `fn`s for that reason (and to avoid one process per log line).
+19. **A `within` block builds one narrowed root per program,** not one per block. It costs about 0.6 ms per program (200 `run` calls: 0.18 s inside a block, 0.05 s outside), so sharing a root through `setns` was not worth the complexity. An item in a filter's own `see` lines is cut down to the view by intersection; `system` only if both have it.
 
 ## Known limits of the sandbox
 
 - The interpreter is PID 1 of the new PID namespace but reaps only the children it starts. A grandchild orphaned onto it stays a zombie until the run ends.
 - A program's environment is rebuilt (`PATH`, `LANG`, `TZ`, `HOME=/tmp` and declared `env`), but `PATH` keeps the host's value, so it can name directories that do not exist inside.
 - A `ro` mount made recursively is remounted read-only including its submounts. Each submount keeps the flags the host gave it.
-- A filter with `see` clauses runs in a nested mount namespace under `/tmp/.weir-see-<pid>`; an empty directory of that name remains in the sandbox's private `/tmp` until the run ends.
+- A filter with `see` lines, or a program started inside a `within` block, runs in a nested mount namespace under `/tmp/.weir-see-<pid>`; an empty directory of that name remains in the sandbox's private `/tmp` until the run ends.
 - Verified on Linux 6.12 x86_64 with unprivileged user namespaces enabled. The `aarch64` `pivot_root` syscall number is present and untested.
 - Nested flow calls are limited to 64 levels and nested fn calls to 200 (one shared depth counter), so a runaway recursive script fails with an error instead of overflowing the stack.
 

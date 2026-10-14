@@ -25,10 +25,8 @@ filter cat_file {
   program "cat"
   in file: path
   args ["--", file]
-  sandbox {
-    see system
-    see "/var/log" ro
-  }
+  see system
+  see "/var/log" ro
   takes none
   yields lines
 }
@@ -37,10 +35,8 @@ filter zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
-  sandbox {
-    see system
-    see "/var/log" ro
-  }
+  see system
+  see "/var/log" ro
   takes none
   yields lines
 }
@@ -49,7 +45,7 @@ filter date_epoch {
   program "date"
   in stamp: string
   args ["-u", "-d", stamp, "+%s"]    // GNU date; stamp is "YYYY-MM-DD HH:MM:SS"
-  sandbox { see system }
+  see system
   takes none
   yields lines
 }

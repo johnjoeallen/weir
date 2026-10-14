@@ -5,6 +5,7 @@ The scripts are in the `examples/` folder and are installed under
 
 | Script | What it does |
 |---|---|
+| `commands.weir` | Every way Weir starts a program: declared filters, chaining, the generic `run`, `ok_codes`, `try` and `catch`. See [Running programs](commands.md). Read-only. |
 | `dpkgwatch.weir` | Summarises package changes from `dpkg.log`: counts by action, most-changed packages, busiest days, and removed packages. Read-only. |
 | `logwatch.weir` | Summarises an nginx access log and can block abusive clients by editing a deny file, with `confirmable` steps, a lock, and a rollback if `nginx -t` rejects the change. |
 | `parse_access.weir` | A local component imported by `logwatch.weir`: parses nginx combined-format lines into typed records with pure date arithmetic, so no program is started per line. |

@@ -51,6 +51,10 @@ main flow report {
   as skipped, unless the caller passes `--confirm`.
 - **Tests are part of the file.** `weir test` runs them with program output stubbed.
 
+## Why Weir
+
+A weir is a low barrier across a river. It doesn't stop the water; it controls how the water passes — over a defined edge, through a known channel, at a measurable rate. Engineers build them precisely because a weir makes flow visible and countable. That is what this language does with scripts. Work is expressed as flows, data moves through pipelines, and nothing passes unseen: a script declares its inputs, its steps, its outputs and the resources it may touch, and the checker verifies all of it before a single command runs.
+
 ## Status
 
 !!! warning "Early, and subject to change"

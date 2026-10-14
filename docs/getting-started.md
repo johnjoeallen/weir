@@ -74,10 +74,8 @@ filter cat_hosts {
   program "cat"
   in file: path
   args ["--", file]
-  sandbox {
-    see system
-    see "/etc" ro
-  }
+  see system
+  see "/etc" ro
   takes none
   yields lines
 }
@@ -87,10 +85,8 @@ filter count_lines {
   program "wc"
   in file: path
   args ["-l", file]
-  sandbox {
-    see system
-    see "/var/log" ro
-  }
+  see system
+  see "/var/log" ro
   takes none
   yields lines
 }

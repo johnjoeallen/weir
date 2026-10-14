@@ -14,7 +14,7 @@ sandbox {
 }
 ```
 
-A filter can restrict what its program sees by adding a `sandbox { see ... }` block.
+A filter can restrict what its program sees by adding `see` lines to its declaration.
 The program then sees only the paths listed there, and only those that the script's
 own `sandbox` block mounted. Only the script you run has a `sandbox` block. A script
 it imports with `use` can't mount anything, so imported code never sees more than the
@@ -33,7 +33,7 @@ run, and `--no-sandbox` removes it (with a warning).
 
 ## A smaller view for one program
 
-A filter's `sandbox { see ... }` block gives its program a second, smaller root
+A filter's `see` lines give its program a second, smaller root
 inside the script's sandbox. Just before the program starts, Weir:
 
 1. gives the child process its own copy of the mount table (a nested mount namespace);
@@ -55,6 +55,35 @@ narrow: it can't name a path the script didn't mount (`E-SEE-UNMOUNTED`), and
 
 The nested view changes the filesystem only. The program stays in the same user
 and PID namespaces as the script.
+
+## Narrowing part of a flow: `within`
+
+A `within` block does for several statements what `see` lines do for one program. Its header lists
+the view, and every program started inside it, and the built-ins that touch the filesystem,
+see only that:
+
+```weir
+let info = within system, "/etc" ro {
+  let kernel = run(cmd: "uname", args: ["-s", "-r"])
+  let hosts  = cat_file(file: path(text: "/etc/hosts"))
+
+  return { kernel: first(of: kernel), hosts: count(of: hosts) }
+}
+```
+
+- **A value:** `return` leaves the block with a value, so no variable has to be declared outside
+  it. A block used as a value must return on every path (`E-WITHIN-NO-RETURN`). Variables declared
+  inside the block stay inside it.
+- **Only narrower:** a `within` can't widen what the script, or an enclosing `within`, allows. Naming a
+  path the script never mounted is `E-SEE-UNMOUNTED`; naming one the enclosing block doesn't have
+  fails when the block starts.
+- **Programs:** a path outside the view is missing, as it would be for a filter with `see` lines.
+- **Built-ins:** `read_text`, `write` and the others fail with an error naming the `within` block.
+  `exists` returns `false`.
+- **Cost:** each program gets its own narrowed root, which adds about 0.6 ms.
+
+The word `sandbox` is used only for the block at the top of the script. A filter uses `see` lines,
+and a flow uses `within`.
 
 ## Limits
 

@@ -337,17 +337,15 @@ The set of executables a flow may run is computed from its call graph: the `prog
 
 ### 7.3 Filters narrow the view; components cannot widen it
 
-By default an external program sees the whole sandbox, with every mount in the mode it was declared. A `filter` may narrow what its program sees with a `sandbox` clause listing inside paths and a mode:
+By default an external program sees the whole sandbox, with every mount in the mode it was declared. A `filter` may narrow what its program sees with `see` lines listing inside paths and a mode:
 
 ```weir
 filter nginx_test {
   program "nginx"
   args ["-t"]
-  sandbox {
-    see system
-    see "/etc/nginx" ro
-    see "/var/log/nginx" rw
-  }
+  see system
+  see "/etc/nginx" ro
+  see "/var/log/nginx" rw
   takes none
   yields none
 }
@@ -358,15 +356,54 @@ filter nginx_test {
 | `see <inside> ro\|rw` | the program sees this inside path in this mode |
 | `see system` | the system set |
 
-When a filter has a `sandbox` clause the program sees only those paths. Each `see` must name a path that is mounted in the script's sandbox, in that mode or a more permissive one: `see "/data" ro` is satisfied by a `rw` mount of `/data`, and `see "/data" rw` is not satisfied by a `ro` mount. Otherwise the call throws `CapabilityError` naming the filter, the path and the mode, and `weir check` reports it when the paths are literal. A filter therefore never sees more than the script's sandbox, and a `see` clause can only remove access, never add it.
+When a filter has `see` lines the program sees only those paths. Each `see` must name a path that is mounted in the script's sandbox, in that mode or a more permissive one: `see "/data" ro` is satisfied by a `rw` mount of `/data`, and `see "/data" rw` is not satisfied by a `ro` mount. Otherwise the call throws `CapabilityError` naming the filter, the path and the mode, and `weir check` reports it when the paths are literal. A filter therefore never sees more than the script's sandbox, and a `see` clause can only remove access, never add it.
 
-**Components.** Only the entry file has a `sandbox` block. A `sandbox` block in an imported file is an error (`E-SANDBOX-NOT-ENTRY`). Filters in imported components use `see` clauses, and those are their requirements: an imported filter that says `see "/etc/ssl" ro` fails the check against a script that did not mount `/etc/ssl`. A library therefore cannot widen what the script exposes, and the requirements show in the component's manifest.
+**Components.** Only the entry file has a file-level `sandbox` block of `mount` lines. One in an imported file is an error (`E-SANDBOX-NOT-ENTRY`); a scoped `within` block is allowed ([section 7.3.1](#731-scoped-within-blocks)). Filters in imported components use `see` clauses, and those are their requirements: an imported filter that says `see "/etc/ssl" ro` fails the check against a script that did not mount `/etc/ssl`. A library therefore cannot widen what the script exposes, and the requirements show in the component's manifest.
 
 The caller can narrow further with `--ro <inside-path>` (turn a `rw` mount into `ro` for this run) and `--deny-exec <name>`.
 
 **Alternative rejected: a separate sandbox per flow.** It would let one file's flows see different filesystems, but it multiplies the places to read, and a flow calling another flow would need a rule for whose sandbox wins. One file, one sandbox; filters narrow.
 
 **Alternative rejected: no narrowing at all.** Every wrapped program would see every writable folder the script has, so a network client would have the same write access as the backup tool. Narrowing is cheap because `see` is a subset check.
+
+### 7.3.1 Scoped `within` blocks
+
+A filter narrows the view for one program. A `within` block inside a flow narrows it for a stretch of the script, and can hand a value back. Its header lists the view, with the same items as a filter's `see` lines, separated by commas:
+
+```weir
+let info = within system, "/etc" ro {
+  let kernel = run(cmd: "uname", args: ["-s", "-r"])
+  let hosts  = cat_file(file: path(text: "/etc/hosts"))
+
+  return { kernel: first(of: kernel), hosts: count(of: hosts) }
+}
+print(text: "${info.kernel}: ${info.hosts} lines")
+```
+
+The word `sandbox` is used only for the file-level block of [section 7.1](#71-the-script-defines-the-sandbox), which defines the script's whole filesystem. A filter writes `see` lines, and a flow writes `within`. All three describe a view, and only the file-level block can mount anything.
+
+**What it covers.** While the block runs, the script sees only the listed paths, in the listed modes. This applies to every program started inside it, including programs started by flows and filters called from inside it, and to the built-ins that touch the filesystem (`read_text`, `write`, `exists` and the others). A program sees the path as missing. A built-in that reads or writes it throws `CapabilityError` naming the path and the block's line, and `exists` reports `false`, as it does for any path that is not mounted. When a filter inside the block has `see` lines of its own, its program sees the intersection of the two.
+
+**It can only narrow.** Each item must name a path that the enclosing view has, in that mode or a more permissive one, with the same rule as a filter's `see` ([section 7.3](#73-filters-narrow-the-view-components-cannot-widen-it)); otherwise `weir check` reports `E-SEE-UNMOUNTED` when the paths are literal. Blocks nest, and each level can only narrow the one outside it. `--ro` and `--deny-exec` still apply on top. A `within` block in an imported file is allowed, because it cannot widen anything.
+
+**`return`.** `return <expr>` inside the block leaves the block with that value. It never returns from the flow, so it cannot be confused with anything else: a flow sets outputs with `set` and has no `return` of its own.
+
+- A block used as a value (`let x = within ... { ... }`) must return on every path; otherwise `weir check` reports `E-WITHIN-NO-RETURN`. There is no implicit value: the block's last expression is not its result.
+- A block used as a plain statement may have no `return`, or a bare `return` that leaves early.
+- Every `return` in one block must have the same type.
+- A `return` inside a loop inside the block leaves both the loop and the block.
+- A thrown error leaves the block like any other scope and nothing is returned.
+- Variables declared inside the block are local to it. The value it returns is the way to hand data out.
+
+**Not in a `fn`.** A `fn` is pure and cannot start programs, so a `within` block there is `E-FN-IMPURE`.
+
+**Cost.** Each program started inside the block gets its own narrowed root, built from the block's view just before it starts. On the development machine that adds about 0.6 ms per program (200 `run` calls took 0.18 s inside a block and 0.05 s outside). Building the root once per block and having each program join it is possible later if that ever matters; it would not change the language.
+
+**Alternative rejected: a `see:` argument on `run`.** It repeats the list on every call and cannot cover the built-ins.
+
+**Alternative rejected: the block's last expression as its value.** A trailing `{ ... }` is ambiguous between a record and a nested block, and an implicit result is easy to produce by accident with a stray last line.
+
+**Alternative rejected: reusing `sandbox` for the block.** One word then meant three things: the whole script's filesystem, a filter's narrowing, and a scope with a value. The header of `within` can also grow other clauses later without renaming it.
 
 ### 7.4 Destructive built-ins
 
@@ -593,10 +630,8 @@ filter tail {
   in file: path
   in n: int
   args ["-n", string(value: n), file]
-  sandbox {                            // narrows: tail sees the system set and the log folder, read-only
-    see system
-    see "/var/log/nginx" ro
-  }
+  see system                           // narrows: tail sees the system set and the log folder, read-only
+  see "/var/log/nginx" ro
   takes none
   yields lines
 }
@@ -604,11 +639,9 @@ filter tail {
 filter nginx_test {
   program "nginx"
   args ["-t"]
-  sandbox {
-    see system
-    see "/etc/nginx" ro
-    see "/var/log/nginx" rw         // nginx -t opens its error log
-  }
+  see system
+  see "/etc/nginx" ro
+  see "/var/log/nginx" rw         // nginx -t opens its error log
   takes none
   yields none
 }
@@ -618,11 +651,9 @@ filter systemctl {
   in action: enum(reload, restart, status)
   in unit: string
   args [action, unit]
-  sandbox {
-    see system
-    see "/run/systemd" ro
-    see "/run/dbus/system_bus_socket" rw
-  }
+  see system
+  see "/run/systemd" ro
+  see "/run/dbus/system_bus_socket" rw
   takes none
   yields none
 }
@@ -814,8 +845,8 @@ out_decl    = "out" ident ":" type ;
 sandbox_block  = "sandbox" "{" { in_decl | mount } "}" ;     (* entry file only *)
 mount       = "mount" ( "system"
                       | expr [ "at" expr ] ( "ro" | "rw" ) ) ;
-see_block   = "sandbox" "{" { see } "}" ;                  (* inside a filter *)
-see         = "see" ( "system" | expr ( "ro" | "rw" ) ) ;
+see         = "see" see_item ;                              (* in a filter, one per line *)
+see_item    = "system" | expr ( "ro" | "rw" ) ;
 requires    = "requires" expr ;
 lock        = "lock" expr ;
 finally     = "finally" block ;
@@ -824,7 +855,7 @@ filter      = "filter" ident "{" { filter_item } "}" ;
 filter_item = "program" string
             | in_decl
             | "args" list_lit
-            | see_block
+            | see
             | "env" "{" { ident "=" expr } "}"
             | "takes" io_kind
             | "yields" io_kind
@@ -835,7 +866,7 @@ fn          = "fn" ident "(" [ params ] ")" "->" type block ;
 test        = "test" string "{" { test_item } "}" ;
 
 statement   = let | var | assign | set | if | if_let | for | try_stmt
-            | return | fail | step | expr ;
+            | return | fail | within_block | step | expr ;
 let         = "let" ident [ ":" type ] "=" expr ;
 var         = "var" ident [ ":" type ] "=" expr ;
 assign      = ident "=" expr ;
@@ -845,6 +876,7 @@ if_let      = "if" "let" ident "=" expr block [ "else" block ] ;
 for         = "for" ident "in" expr block ;
 try_stmt    = "try" block { "catch" ident ":" ident block } ;
 return      = "return" expr ;
+within_block = "within" see_item { "," see_item } "{" { statement } "}" ;   (* a value when bound with let; see 7.3.1 *)
 fail        = "fail" "message" ":" expr ;
 
 step        = ( call | ident "{" body "}" ) [ "as" expr ] { modifier } ;
@@ -855,7 +887,7 @@ postfix     = primary { "." ident [ "(" [ arg { "," arg } ] ")" ] } ;
                                              (* with parens: a stage (native, filter or run);
                                                 without: member access.
                                                 A line starting with "." continues the previous one. *)
-primary     = call | ident | literal | "(" expr ")" | if_expr ;
+primary     = call | ident | literal | "(" expr ")" | if_expr | within_block ;
 if_expr     = "if" expr block "else" ( block | if_expr ) ;   (* a value: each block ends in an expression *)
 call        = [ "try" ] ident "(" [ arg { "," arg } ] ")" ;
 arg         = ident ":" expr | "..." "$" ident ;
@@ -877,7 +909,7 @@ ok_codes     or           out          private      program      requires
 return       ro           run          rw           sandbox      secret
 see          set          stub         system       takes        test
 text         true         try          use          var          when
-yields
+within       yields
 ```
 
 `it` is reserved in pipeline stage expressions only; elsewhere the checker rejects its use as a binding name to avoid ambiguity. Names in the error-type list (`ExecError`, `CapabilityError`, `IoError`, `ParseError`, `Timeout`) are reserved in type position.
@@ -924,6 +956,7 @@ The bet is that these concepts are each individually easy and rarely interact, a
 - **Structural record types** appear in the type table. They are needed for `count_by` output and parsed JSON, but they make Weir's type system larger than the "distinct types" list in the brief. An alternative is `map<string, T>` throughout, at the cost of heterogeneous rows.
 - **`set` for outputs and `try` as an attempt record** are syntactic choices made here without much competition from alternatives.
 - **The filesystem sandbox** ([section 7](#7-capabilities)) with a file-level `sandbox` block, host-to-inside remapping, and `see` clauses on filters are not in the original brief. They replace the brief's `needs read` and `needs write`, which Weir could only have enforced on its own built-ins. The sandbox also changes how `path` inputs behave on the command line.
+- **Scoped `within` blocks** ([section 7.3.1](#731-scoped-within-blocks)) narrow the view for part of a flow and use `return` for a value. They are an addition after the first interpreter, not part of the original design.
 - **`$` in `...$list`** appears only in spread. Variables are otherwise bare. It is inconsistent and should probably be `...list`.
 
 ### 19.4 Deferred past v1

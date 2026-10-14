@@ -3,7 +3,7 @@
 use crate::ast::*;
 use crate::builtins::{self, Args};
 use crate::error::*;
-use crate::mounts::{normalize, Mounts};
+use crate::mounts::{normalize, Mounts, SYSTEM_SET};
 use crate::pretty::show_expr;
 use crate::value::Value;
 use std::collections::HashMap;
@@ -89,6 +89,57 @@ impl Frame {
     }
 }
 
+/// The part of the sandbox a `within` block leaves visible.
+#[derive(Clone, Debug)]
+pub struct View {
+    pub system: bool,
+    pub paths: Vec<(String, Mode)>,
+    pub line: u32,
+}
+
+fn is_under(path: &str, base: &str) -> bool {
+    base == "/" || path == base || path.strip_prefix(base).is_some_and(|r| r.starts_with('/'))
+}
+
+fn narrower(a: Mode, b: Mode) -> Mode {
+    if a == Mode::Ro || b == Mode::Ro {
+        Mode::Ro
+    } else {
+        Mode::Rw
+    }
+}
+
+impl View {
+    /// Can `inside` be used (written, if `write`) from within this view?
+    fn allows(&self, inside: &str, write: bool) -> bool {
+        let p = normalize(inside);
+        if self.system && !write && SYSTEM_SET.iter().any(|s| is_under(&p, s)) {
+            return true;
+        }
+        self.paths.iter().any(|(base, mode)| is_under(&p, base) && (*mode == Mode::Rw || !write))
+    }
+
+    /// What a program started inside this view sees: this view, cut down to a filter's own `see` lines.
+    fn narrow_to(&self, filter: Option<(Vec<(String, Mode)>, bool)>) -> (Vec<(String, Mode)>, bool) {
+        let Some((fpaths, fsystem)) = filter else {
+            return (self.paths.clone(), self.system);
+        };
+        let mut out: Vec<(String, Mode)> = Vec::new();
+        for (fp, fm) in &fpaths {
+            for (vp, vm) in &self.paths {
+                if is_under(vp, fp) {
+                    out.push((vp.clone(), narrower(*fm, *vm)));
+                } else if is_under(fp, vp) {
+                    out.push((fp.clone(), narrower(*fm, *vm)));
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        (out, fsystem && self.system)
+    }
+}
+
 pub struct Interp {
     pub opts: Options,
     pub mounts: Mounts,
@@ -97,6 +148,8 @@ pub struct Interp {
     path: Vec<String>,
     pub stubs: HashMap<String, Value>,
     pub test_mode: bool,
+    /// The `within` blocks being run, innermost last.
+    views: Vec<View>,
     /// Running inside the real sandbox, so `see` clauses can be enforced per program.
     pub sandboxed: bool,
     depth: usize,
@@ -169,6 +222,7 @@ impl Interp {
             path: vec![],
             stubs: HashMap::new(),
             test_mode: false,
+            views: vec![],
             sandboxed: false,
             depth: 0,
             captured: vec![],
@@ -190,6 +244,18 @@ impl Interp {
                 format!("cannot {op} {inside}: it is outside every mount, so it does not exist in the sandbox\nmounts:\n{}", self.mounts.describe().trim_end()),
             )),
             Some((m, host)) => {
+                if let Some(v) = self.views.last() {
+                    if !v.allows(inside, write) {
+                        return Err(throw(
+                            "CapabilityError",
+                            format!(
+                                "cannot {op} {inside}: it is outside the view of the enclosing `within` block (line {}){}",
+                                v.line,
+                                if write && v.allows(inside, false) { ", where it is read-only" } else { "" }
+                            ),
+                        ));
+                    }
+                }
                 if write && m.mode == Mode::Ro {
                     return Err(throw(
                         "IoError",
@@ -644,7 +710,55 @@ impl Interp {
                 let c = truthy(&self.eval(cond, frame)?, "an `if` condition")?;
                 self.eval_block_value(if c { then } else { else_ }, frame)
             }
+            ExprKind::Within { items, body } => {
+                let view = self.build_view(items, e.span.line, frame)?;
+                self.views.push(view);
+                let r = self.exec_block(body, frame);
+                self.views.pop();
+                match r {
+                    Ok(()) => Ok(Value::Absent),
+                    Err(c) => match *c {
+                        Ctl::Return(v) => Ok(v),
+                        other => Err(Box::new(other)),
+                    },
+                }
+            }
         }
+    }
+
+    /// Evaluate a `within` header into a view, refusing anything the enclosing view does not have.
+    fn build_view(&mut self, items: &[(See, Span)], line: u32, frame: &mut Frame) -> R<View> {
+        let mut view = View { system: false, paths: vec![], line };
+        for (see, _) in items {
+            match see {
+                See::System => {
+                    let have = match self.views.last() {
+                        Some(v) => v.system,
+                        None => self.mounts.is_system_mounted(),
+                    };
+                    if !have {
+                        return Err(throw("CapabilityError", "a `within` block needs `system`, but it is not in the enclosing view".to_string()));
+                    }
+                    view.system = true;
+                }
+                See::Path { path, mode } => {
+                    let p = normalize(&self.eval(path, frame)?.display());
+                    let write = *mode == Mode::Rw;
+                    let ok = match self.views.last() {
+                        Some(v) => v.allows(&p, write),
+                        None => matches!(self.mounts.find(&p), Some((m, _)) if !(m.mode == Mode::Ro && write)),
+                    };
+                    if !ok {
+                        return Err(throw(
+                            "CapabilityError",
+                            format!("a `within` block needs {p} {}, which the enclosing view does not have in that mode", mode.word()),
+                        ));
+                    }
+                    view.paths.push((p, *mode));
+                }
+            }
+        }
+        Ok(view)
     }
 
     fn eval_block_value(&mut self, b: &Block, frame: &mut Frame) -> R<Value> {
@@ -887,9 +1001,11 @@ impl Interp {
             }
             (_, "exists") => {
                 let p = a.text("path")?;
+                // A path outside the mounts, or outside the enclosing `within` view, does not exist.
+                let visible = self.views.last().is_none_or(|v| v.allows(&p, false));
                 Ok(Value::Bool(match self.mounts.find(&p) {
-                    Some((_, host)) => std::path::Path::new(&host).exists(),
-                    None => false,
+                    Some((_, host)) if visible => std::path::Path::new(&host).exists(),
+                    _ => false,
                 }))
             }
             (_, "read_text") => {
@@ -1176,6 +1292,10 @@ impl Interp {
         cmd.current_dir(if std::path::Path::new("/tmp").is_dir() { "/tmp" } else { "/" });
         cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let narrow = match self.views.last() {
+            Some(v) => Some(v.narrow_to(narrow)),
+            None => narrow,
+        };
         if let (true, Some((sees, system))) = (self.sandboxed, narrow) {
             crate::sandbox::narrow(&mut cmd, sees, system);
         }

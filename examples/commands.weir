@@ -1,0 +1,117 @@
+#!/usr/bin/env -S weir --run
+//
+// commands.weir: the ways Weir starts a program.
+//
+//   ./commands.weir
+//   ./commands.weir --pattern nobody
+//
+// Read-only. Every command here is an argument list; no shell is involved, so nothing
+// is ever re-parsed, split on spaces or expanded.
+
+sandbox {
+  mount system
+  mount "/etc" ro
+  mount "/var/log" ro        // mounted for the script, but a `within` block below leaves it out
+}
+
+// ---------------------------------------------------------------------------
+// 1. A declared filter: one program, typed parameters, a declared view of the disk.
+// ---------------------------------------------------------------------------
+
+filter cat_file {
+  program "cat"
+  in file: path
+  args ["--", file]          // a list; "--" stops a file named "-x" being read as an option
+  see system
+  see "/etc" ro            // this program can see /etc and nothing else the script mounted
+  takes none                 // stdin is closed
+  yields lines               // stdout becomes a list of lines
+}
+
+// A filter that reads the lines before it in a chain: `takes lines`.
+filter grep_fixed {
+  program "grep"
+  in pattern: string
+  args ["-F", "-e", pattern] // -e protects a pattern such as "-foo" from being read as an option
+  see system
+  takes lines
+  yields lines
+  ok_codes [0, 1]            // grep returns 1 for "no match", which is not a failure here
+}
+
+// Pure helper: a plain function can be tested without running anything.
+fn describe(code: int) -> string {
+  return if code == 0 { "succeeded" } else { "failed with return code ${code}" }
+}
+
+// Calls filters only, so a test can stub both programs and run this flow.
+flow search {
+  in  pattern: string
+  out found: list<string>
+
+  // Call a filter like a function.
+  let passwd = cat_file(file: path(text: "/etc/passwd"))
+
+  // Chain filters with `.`: the lines on the left feed `takes lines` on the right.
+  set found = passwd.grep_fixed(pattern: pattern)
+}
+
+main flow commands {
+  in  pattern: string = "root"
+  out matches: int
+
+  // 1. Filters. `search` calls cat_file and chains grep_fixed after it.
+  let found = search(pattern: pattern).found
+  print(text: "lines containing '${pattern}': ${count(of: found)}")
+
+  // 2. The generic form, for a one-off call that does not need a declared filter.
+  //    `cmd` must be a literal string, so the program is known before the script runs.
+  let kernel = run(cmd: "uname", args: ["-s", "-r"])
+  print(text: "kernel: ${first(of: kernel)}")
+
+  // 3. Spread a list into the argument list with ...$name.
+  let words = ["one", "two", "three"]
+  let echoed = run(cmd: "echo", args: ["words:", ...$words])
+  print(text: first(of: echoed))
+
+  // 4. A return code outside ok_codes throws ExecError. List the codes that are fine.
+  //    grep -c prints a count, and returns 1 when the count is zero.
+  let no_match = run(cmd: "grep", args: ["-c", "-F", "-e", "no-such-text-zzz", "/etc/hostname"], ok_codes: [0, 1])
+  print(text: "grep -c with no match prints: ${first(of: no_match)}")
+
+  // 5. try turns a failure into a value instead of stopping the script.
+  //    The attempt has ok, code and message; it never throws.
+  let attempt = try run(cmd: "false", args: [])
+  print(text: "false ${describe(code: attempt.code)}")
+
+  // 6. catch handles a typed error. This one fails because the file is not there.
+  try {
+    cat_file(file: path(text: "/etc/no-such-file"))
+  } catch e: ExecError {
+    print(text: "cat failed as expected: ${e.message}")
+  }
+
+  // 7. Narrow a stretch of the script with `within`. Programs and built-ins inside see only what the
+  //    header lists, and `return` hands a value out. /var/log is mounted by the script but is not
+  //    in this view, so reading it fails here.
+  let view = within system, "/etc" ro {
+    let hosts = cat_file(file: path(text: "/etc/hosts"))
+    return { hosts: count(of: hosts), log_visible: exists(path: path(text: "/var/log")) }
+  }
+  print(text: "within: ${view.hosts} lines in /etc/hosts, /var/log visible: ${view.log_visible}")
+
+  set matches = count(of: found)
+}
+
+test "describe names the return code" {
+  expect describe(code: 0) == "succeeded"
+  expect describe(code: 2) == "failed with return code 2"
+}
+
+// Tests never start a real program. A filter is stubbed with the lines it would yield.
+test "search finds the matching lines" {
+  stub cat_file yields lines: ["root:x:0:0", "daemon:x:1:1", "root2:x:2:2"]
+  stub grep_fixed yields lines: ["root:x:0:0", "root2:x:2:2"]
+  let r = run search(pattern: "root")
+  expect count(of: r.found) == 2
+}

@@ -117,6 +117,9 @@ pub enum ExprKind {
     /// `if cond { expr } else { expr }`: each branch is a block whose last
     /// expression statement is its value.
     If { cond: Box<Expr>, then: Block, else_: Block },
+    /// `within <view items> { ... }`: runs the block with a narrower view of the filesystem.
+    /// `return` inside it leaves the block with a value.
+    Within { items: Vec<(See, Span)>, body: Block },
 }
 
 #[derive(Debug, Clone)]
@@ -202,7 +205,7 @@ pub struct Flow {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Mode {
     Ro,
     Rw,

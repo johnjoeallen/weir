@@ -41,10 +41,8 @@ filter cat_file {
   program "cat"
   in file: path
   args ["--", file]                 // -- stops a file named "-x" being read as a flag
-  sandbox {
-    see system
-    see "/var/log/nginx" ro
-  }
+  see system
+  see "/var/log/nginx" ro
   takes none
   yields lines
 }
@@ -53,10 +51,8 @@ filter zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
-  sandbox {
-    see system
-    see "/var/log/nginx" ro
-  }
+  see system
+  see "/var/log/nginx" ro
   takes none
   yields lines
 }
@@ -65,7 +61,7 @@ filter grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern]        // -e protects a pattern like "-foo" from being read as a flag
-  sandbox { see system }
+  see system
   takes lines
   yields lines
   ok_codes [0, 1]                   // grep exits 1 for "no match", which is not a failure
@@ -74,11 +70,9 @@ filter grep_fixed {
 filter nginx_test {
   program "nginx"
   args ["-t"]
-  sandbox {
-    see system
-    see "/etc/nginx" ro
-    see "/var/log/nginx" rw         // nginx -t opens its error log
-  }
+  see system
+  see "/etc/nginx" ro
+  see "/var/log/nginx" rw         // nginx -t opens its error log
   takes none
   yields none
 }
@@ -86,10 +80,8 @@ filter nginx_test {
 filter nginx_reload {
   program "nginx"
   args ["-s", "reload"]
-  sandbox {
-    see system
-    see "/run/nginx.pid" rw         // nginx -s reload reads the pid file and signals the master
-  }
+  see system
+  see "/run/nginx.pid" rw         // nginx -s reload reads the pid file and signals the master
   takes none
   yields none
 }

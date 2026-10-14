@@ -350,10 +350,8 @@ filter narrow {{
   program "sh"
   in script: string
   args ["-c", script]
-  sandbox {{
-    see system
-    see "{a}" ro
-  }}
+  see system
+  see "{a}" ro
   yields lines
   ok_codes [0, 1, 2]
 }}
@@ -387,4 +385,108 @@ main flow a {{
     // and a ro `see` stays read-only
     assert!(o.stdout.to_lowercase().contains("read-only"), "{}", o.stdout);
     assert!(!a.join("new.txt").exists());
+}
+
+#[test]
+fn the_bundled_examples_check_and_their_tests_pass() {
+    for name in ["commands.weir", "dpkgwatch.weir", "parse_access.weir"] {
+        let f = manifest(&format!("examples/{name}"));
+        let c = weir_args(&["check", &f]);
+        assert_eq!(c.code, 0, "{name}: {}{}", c.stdout, c.stderr);
+        let t = weir_args(&["test", &f]);
+        assert_eq!(t.code, 0, "{name}: {}{}", t.stdout, t.stderr);
+    }
+}
+
+#[test]
+fn commands_example_runs_every_form_of_starting_a_program() {
+    let o = weir_args(&["run", &manifest("examples/commands.weir")]);
+    if o.code == 4 {
+        eprintln!("skipped: this host cannot create the sandbox: {}", o.stderr.trim());
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    for expected in ["kernel: Linux", "words: one two three", "prints: 0", "false failed with return code 1", "cat failed as expected", "/var/log visible: false"] {
+        assert!(o.stdout.contains(expected), "missing {expected:?}: {}", o.stdout);
+    }
+}
+
+// ---- `within` blocks and `see` lines ----------------------------------------------
+
+const WITHIN_HEAD: &str = "sandbox {\n  mount system\n  mount \"/etc\" ro\n  mount \"/var/log\" ro\n}\nfilter cat_file {\n  program \"cat\"\n  in file: path\n  args [\"--\", file]\n  takes none\n  yields lines\n}\n";
+
+fn within_script(flow_body: &str) -> PathBuf {
+    script(&format!("{WITHIN_HEAD}main flow a {{\n  out r: int\n{flow_body}\n}}\n"))
+}
+
+#[test]
+fn within_returns_a_value_and_its_lets_stay_inside() {
+    let p = within_script(
+        "  let info = within system, \"/etc\" ro {\n    let inner = 41\n    return { n: inner + 1 }\n  }\n  set r = info.n\n",
+    );
+    let o = weir_args(&["run", s(&p), "--json"]);
+    if o.code == 4 {
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("\"r\": 42"), "{}", o.stdout);
+    let leaked = within_script("  within system, \"/etc\" ro {\n    let inner = 1\n  }\n  set r = inner\n");
+    let c = weir_args(&["check", s(&leaked)]);
+    assert_eq!(c.code, 3);
+    assert!(c.stderr.contains("E-UNKNOWN-NAME"), "{}", c.stderr);
+}
+
+#[test]
+fn within_hides_paths_from_programs_and_built_ins() {
+    let p = within_script(
+        "  let p = try within system, \"/etc\" ro {\n    return cat_file(file: path(text: \"/var/log/dpkg.log\"))\n  }\n  let b = try within system, \"/etc\" ro {\n    return read_text(file: path(text: \"/var/log/dpkg.log\"))\n  }\n  let e = within system, \"/etc\" ro {\n    return exists(path: path(text: \"/var/log\"))\n  }\n  let outside = exists(path: path(text: \"/var/log\"))\n  if p.ok or b.ok or e or not outside {\n    fail message: \"the view leaked or never ended\"\n  }\n  print(text: b.message)\n  set r = 1\n",
+    );
+    let o = weir_args(&["run", s(&p)]);
+    if o.code == 4 {
+        eprintln!("skipped: this host cannot create the sandbox: {}", o.stderr.trim());
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("outside the view of the enclosing `within` block"), "{}", o.stdout);
+}
+
+#[test]
+fn within_can_only_narrow() {
+    // /var/log is mounted by the script, but not in the outer view
+    let p = within_script(
+        "  let w = try within system, \"/etc\" ro {\n    return within \"/var/log\" ro {\n      return 1\n    }\n  }\n  if w.ok {\n    fail message: \"widened\"\n  }\n  print(text: w.message)\n  set r = 1\n",
+    );
+    let o = weir_args(&["run", s(&p)]);
+    if o.code == 4 {
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("enclosing view does not have"), "{}", o.stdout);
+    // a path the script never mounted is a check error
+    let q = within_script("  within \"/srv\" ro {\n    print(text: \"x\")\n  }\n  set r = 1\n");
+    let c = weir_args(&["check", s(&q)]);
+    assert_eq!(c.code, 3);
+    assert!(c.stderr.contains("E-SEE-UNMOUNTED"), "{}", c.stderr);
+}
+
+#[test]
+fn within_check_rules() {
+    let no_ret = within_script("  let x = within system {\n    print(text: \"hi\")\n  }\n  set r = 1\n");
+    assert!(weir_args(&["check", s(&no_ret)]).stderr.contains("E-WITHIN-NO-RETURN"));
+    let ok_stmt = within_script("  within system {\n    print(text: \"hi\")\n  }\n  set r = 1\n");
+    assert_eq!(weir_args(&["check", s(&ok_stmt)]).code, 0);
+    let both = within_script("  let x = within system {\n    if true {\n      return 1\n    } else {\n      return 2\n    }\n  }\n  set r = x\n");
+    assert_eq!(weir_args(&["check", s(&both)]).code, 0);
+    let outside = within_script("  return 1\n  set r = 1\n");
+    assert!(weir_args(&["check", s(&outside)]).stderr.contains("E-RETURN-OUTSIDE-FN"));
+    let in_fn = script("fn f() -> int {\n  return within system {\n    return 1\n  }\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
+    assert!(weir_args(&["check", s(&in_fn)]).stderr.contains("E-FN-IMPURE"));
+}
+
+#[test]
+fn a_filter_no_longer_takes_a_sandbox_block() {
+    let p = script("filter f {\n  program \"cat\"\n  sandbox {\n    see system\n  }\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
+    let o = weir_args(&["check", s(&p)]);
+    assert_eq!(o.code, 3);
+    assert!(o.stderr.contains("E-FILTER-SANDBOX") && o.stderr.contains("`see` lines directly"), "{}", o.stderr);
 }

@@ -89,6 +89,16 @@ fn literal_str(e: &Expr) -> Option<String> {
     }
 }
 
+/// Does every path through the block end in `return`, `fail` or a thrown error from an `if`/`else` that does?
+fn block_returns(b: &Block) -> bool {
+    b.stmts.iter().any(|s| match &s.kind {
+        StmtKind::Return(_) | StmtKind::Fail(_) => true,
+        StmtKind::If { then, else_: Some(e), .. } => block_returns(then) && block_returns(e),
+        StmtKind::IfLet { then, else_: Some(e), .. } => block_returns(then) && block_returns(e),
+        _ => false,
+    })
+}
+
 fn static_mounts(f: &File) -> StaticMounts {
     let mut m = StaticMounts { present: f.sandbox.is_some(), all_known: true, ..Default::default() };
     if let Some(sb) = &f.sandbox {
@@ -172,6 +182,7 @@ struct Cx<'a> {
     fns: HashMap<String, &'a FnDecl>,
     scopes: Vec<HashMap<String, Binding>>,
     in_fn: bool,
+    within_depth: usize,
     in_test: bool,
     in_requires: bool,
     stage_depth: u32,
@@ -204,6 +215,7 @@ impl<'a> Cx<'a> {
             fns: HashMap::new(),
             scopes: vec![],
             in_fn: false,
+            within_depth: 0,
             in_test: false,
             in_requires: false,
             stage_depth: 0,
@@ -476,23 +488,7 @@ impl<'a> Cx<'a> {
             self.expr(e, Want { opt_ok: false, secret_ok: true });
         }
         if let Some(sees) = &f.see {
-            for (see, span) in sees {
-                if let See::Path { path, mode } = see {
-                    self.expr(path, Want::default());
-                    if let Some(p) = literal_str(path) {
-                        self.check_see(&f.name, &p, *mode, *span);
-                    }
-                } else if !self.mounts.present && self.fidx == 0 {
-                    // reported once below via W-NO-SANDBOX
-                } else if self.mounts.present && self.mounts.all_known && !SYSTEM_SET.iter().all(|p| self.mounts.known.iter().any(|(i, _)| i == p)) {
-                    self.err(
-                        *span,
-                        "E-SEE-UNMOUNTED",
-                        format!("filter `{}` has `see system`, but the sandbox does not `mount system`", f.name),
-                        Some("add `mount system` to the sandbox block".into()),
-                    );
-                }
-            }
+            self.check_view_items(&format!("filter `{}`", f.name), sees);
         }
         if f.takes == IoKind::None && f.yields == IoKind::None && f.args.is_empty() && f.ins.is_empty() {
             // nothing to say: a bare command is fine (e.g. `nginx -t` has args though)
@@ -508,6 +504,27 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The entries of a filter's `see` lines or a `within` header, against the script's mounts.
+    fn check_view_items(&mut self, label: &str, sees: &[(See, Span)]) {
+        for (see, span) in sees {
+            if let See::Path { path, mode } = see {
+                self.expr(path, Want::default());
+                if let Some(p) = literal_str(path) {
+                    self.check_see(label, &p, *mode, *span);
+                }
+            } else if !self.mounts.present && self.fidx == 0 {
+                // reported once below via W-NO-SANDBOX
+            } else if self.mounts.present && self.mounts.all_known && !SYSTEM_SET.iter().all(|p| self.mounts.known.iter().any(|(i, _)| i == p)) {
+                self.err(
+                    *span,
+                    "E-SEE-UNMOUNTED",
+                    format!("{label} has `see system`, but the sandbox does not `mount system`"),
+                    Some("add `mount system` to the sandbox block".into()),
+                );
+            }
+        }
+    }
+
     fn check_see(&mut self, filter: &str, path: &str, mode: Mode, span: Span) {
         if !self.mounts.present {
             return;
@@ -517,7 +534,7 @@ impl<'a> Cx<'a> {
                 self.err(
                     span,
                     "E-SEE-UNMOUNTED",
-                    format!("filter `{filter}` needs {path} rw, but the sandbox mounts {m} ro"),
+                    format!("{filter} needs {path} rw, but the sandbox mounts {m} ro"),
                     Some(format!("mount it rw in the sandbox block, or change the `see` to `{path} ro`")),
                 );
             }
@@ -526,7 +543,7 @@ impl<'a> Cx<'a> {
                 self.err(
                     span,
                     "E-SEE-UNMOUNTED",
-                    format!("filter `{filter}` needs {path} {}, which is not mounted in the sandbox", mode.word()),
+                    format!("{filter} needs {path} {}, which is not mounted in the sandbox", mode.word()),
                     Some(format!("add `mount \"{path}\" {}` to the sandbox block", mode.word())),
                 );
             }
@@ -737,8 +754,13 @@ impl<'a> Cx<'a> {
                 }
             }
             StmtKind::Return(e) => {
-                if !self.in_fn {
-                    self.err(s.span, "E-RETURN-OUTSIDE-FN", "`return` is only allowed inside a `fn`".into(), Some("a flow reports results with `set <output> = ...`".into()));
+                if !self.in_fn && self.within_depth == 0 {
+                    self.err(
+                        s.span,
+                        "E-RETURN-OUTSIDE-FN",
+                        "`return` is only allowed inside a `fn` or a `within` block".into(),
+                        Some("a flow reports results with `set <output> = ...`".into()),
+                    );
                 }
                 self.expr(e, Want::default());
             }
@@ -771,7 +793,11 @@ impl<'a> Cx<'a> {
                 if let Some(l) = as_label {
                     self.expr(l, Want::default());
                 }
-                self.expr(expr, Want::default());
+                if matches!(expr.kind, ExprKind::Within { .. }) {
+                    self.within(expr, false);
+                } else {
+                    self.expr(expr, Want::default());
+                }
                 let flow_call = match &expr.kind {
                     ExprKind::Call { name, .. } | ExprKind::RunFlow { name, .. } => self.flows.contains_key(name.as_str()) && !self.fns.contains_key(name.as_str()),
                     _ => false,
@@ -867,6 +893,27 @@ impl<'a> Cx<'a> {
                 self.block(then);
                 self.block(else_);
             }
+            ExprKind::Within { .. } => self.within(e, true),
+        }
+    }
+
+    /// A `within` block. Used as a value (`let x = within ...`) it must return on every path.
+    fn within(&mut self, e: &Expr, as_value: bool) {
+        let ExprKind::Within { items, body } = &e.kind else { return };
+        if self.in_fn {
+            self.err(e.span, "E-FN-IMPURE", "a `fn` cannot contain a `within` block".into(), Some("a `fn` is pure; move this into a flow".into()));
+        }
+        self.check_view_items("a `within` block", items);
+        self.within_depth += 1;
+        self.block(body);
+        self.within_depth -= 1;
+        if as_value && !block_returns(body) {
+            self.err(
+                e.span,
+                "E-WITHIN-NO-RETURN",
+                "a `within` block used as a value must `return` on every path".into(),
+                Some("end the block with `return <value>`, or use the block as a statement".into()),
+            );
         }
     }
 

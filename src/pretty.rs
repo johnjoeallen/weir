@@ -52,6 +52,7 @@ pub fn show_expr(e: &Expr) -> String {
         ExprKind::Try(x) => format!("try {}", show_expr(x)),
         ExprKind::RunFlow { name, args } => format!("run {name}({})", args.iter().map(show_arg).collect::<Vec<_>>().join(", ")),
         ExprKind::If { cond, .. } => format!("if {} {{ ... }} else {{ ... }}", show_expr(cond)),
+        ExprKind::Within { .. } => "within ... { ... }".to_string(),
     }
 }
 

@@ -9,7 +9,7 @@ pub const RESERVED: &[&str] = &[
     "absent", "and", "args", "as", "at", "catch", "confirmable", "else", "enum", "env", "expect", "false", "fail",
     "filter", "finally", "fixture", "flow", "fn", "for", "if", "in", "it", "json", "let", "lines", "lock", "main",
     "mount", "none", "not", "ok_codes", "or", "out", "private", "program", "requires", "return", "ro", "run", "rw",
-    "sandbox", "secret", "see", "set", "stub", "system", "takes", "test", "text", "true", "try", "use", "var", "when",
+    "sandbox", "secret", "see", "set", "stub", "system", "takes", "test", "text", "true", "try", "use", "var", "when", "within",
     "yields",
 ];
 
@@ -465,26 +465,15 @@ impl Parser {
                 f.ins.push(self.in_decl()?);
             } else if self.eat_kw("args") {
                 f.args = self.list_lit()?;
+            } else if self.is_kw("see") {
+                // `see` lines sit directly in the filter; the first one makes the view restricted.
+                f.see.get_or_insert_with(Vec::new).push(self.see_item()?);
             } else if self.is_kw("sandbox") {
-                self.advance();
-                self.expect(Tok::LBrace)?;
-                let mut sees = Vec::new();
-                self.skip_nl();
-                while !self.is(&Tok::RBrace) {
-                    let ssp = self.span();
-                    self.expect_kw("see")?;
-                    if self.eat_kw("system") {
-                        sees.push((See::System, ssp));
-                    } else {
-                        let path = self.expr()?;
-                        let mode = self.mode()?;
-                        sees.push((See::Path { path, mode }, ssp));
-                    }
-                    self.end_stmt()?;
-                    self.skip_nl();
-                }
-                self.expect(Tok::RBrace)?;
-                f.see = Some(sees);
+                return Err(self.err_here(
+                    "E-FILTER-SANDBOX",
+                    "a filter no longer has a `sandbox` block".into(),
+                    Some("write the `see` lines directly in the filter, for example `see system` and `see \"/var/log\" ro`"),
+                ));
             } else if self.eat_kw("env") {
                 self.expect(Tok::LBrace)?;
                 self.skip_nl();
@@ -514,7 +503,7 @@ impl Parser {
                 return Err(self.err_here(
                     "E-SYNTAX",
                     format!("expected a filter clause, found {}", self.tok().describe()),
-                    Some("a filter has: program, in, args, sandbox, env, takes, yields, ok_codes"),
+                    Some("a filter has: program, in, args, see, env, takes, yields, ok_codes"),
                 ));
             }
             self.end_stmt()?;
@@ -525,6 +514,24 @@ impl Parser {
             return Err(self.err_at(span, "E-FILTER-PROGRAM", format!("filter `{}` has no `program`", f.name), Some("add program \"<executable>\"")));
         }
         Ok(f)
+    }
+
+    /// `see system` or `see <path> ro|rw`: one entry of a restricted view.
+    fn see_item(&mut self) -> PResult<(See, Span)> {
+        self.expect_kw("see")?;
+        self.view_item()
+    }
+
+    /// `system` or `<path> ro|rw`: an entry of a view, as in a filter's `see` line or a `within` header.
+    fn view_item(&mut self) -> PResult<(See, Span)> {
+        let ssp = self.span();
+        if self.eat_kw("system") {
+            Ok((See::System, ssp))
+        } else {
+            let path = self.expr()?;
+            let mode = self.mode()?;
+            Ok((See::Path { path, mode }, ssp))
+        }
     }
 
     fn io_kind(&mut self) -> PResult<IoKind> {
@@ -1053,6 +1060,15 @@ impl Parser {
                         self.block()?
                     };
                     ExprKind::If { cond: Box::new(cond), then, else_ }
+                }
+                "within" => {
+                    self.advance();
+                    let mut items = vec![self.view_item()?];
+                    while self.eat(&Tok::Comma) {
+                        items.push(self.view_item()?);
+                    }
+                    let body = self.block()?;
+                    ExprKind::Within { items, body }
                 }
                 "run" if matches!(self.tok_at(1), Tok::Ident(_)) => {
                     self.advance();
