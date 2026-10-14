@@ -314,3 +314,10 @@ fn a_script_given_directly_does_nothing_without_a_mode_flag() {
     assert_eq!(weir_args(&[s(&marker), "--run"]).code, 1);
     assert_eq!(weir_args(&[s(&marker), "--help"]).code, 0);
 }
+
+#[test]
+fn a_leading_mode_flag_before_the_file_works_as_a_shebang_line() {
+    let p = script("main flow a {\n  out r: int\n  set r = 1\n}\n");
+    assert_eq!(weir_args(&["--run", s(&p)]).code, 0);
+    assert_eq!(weir_args(&["--check", s(&p)]).code, 0);
+}

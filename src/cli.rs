@@ -27,7 +27,7 @@ Weir: scripts that glue programs together, checked before they run
 
 usage:
   weir run   <file> [flow] [--flags]    run a flow (the `main` flow by default)
-  weir <file> --run [flow] [--flags]   the same, for a `#!/usr/bin/env weir` script: ./script.weir --run
+  weir <file> --run [flow] [--flags]   the same, a shebang of `#!/usr/bin/env -S weir --run` makes ./script.weir run
   weir <file> --check | --test | --list   other modes; with no mode flag a script only shows its help
   weir check <file> [--json]            check a script without running anything
   weir list  <file> [--manifest]        list flows, their inputs and outputs
@@ -51,7 +51,13 @@ exit codes: 0 success, 1 flow failure, 2 usage error, 3 check error, 4 capabilit
 ";
 
 pub fn main_entry() -> i32 {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // `#!/usr/bin/env -S weir --run` makes the kernel run `weir --run ./script args`:
+    // a leading mode flag followed by the file is the same as `weir ./script --run args`.
+    if args.len() >= 2 && matches!(args[0].as_str(), "--check" | "--test" | "--list" | "--run") && !args[1].starts_with("--") {
+        let mode = args.remove(0);
+        args.insert(1, mode);
+    }
     match args.first().map(String::as_str) {
         None | Some("help") | Some("--help") | Some("-h") => {
             print!("{USAGE}");
