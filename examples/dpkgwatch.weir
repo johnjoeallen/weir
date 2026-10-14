@@ -2,9 +2,9 @@
 //
 // dpkgwatch.weir: summarise package activity from a dpkg log.
 //
-//   weir run dpkgwatch.weir --log /var/log/dpkg.log
-//   weir run dpkgwatch.weir --log /var/log/dpkg.log.2.gz --since 30d --top 20
-//   weir run dpkgwatch.weir --log /var/log/dpkg.log --match golang
+//   ./dpkgwatch.weir                       (reads /var/log/dpkg.log, last 7 days)
+//   ./dpkgwatch.weir --log /var/log/dpkg.log.2.gz --since 30d --top 20
+//   ./dpkgwatch.weir --log /var/log/dpkg.log --match golang
 //
 // Read-only: it never writes anything, so it needs no confirmable steps.
 // Each dpkg.log line is "YYYY-MM-DD HH:MM:SS <action> <package> <old> <new>",
@@ -81,7 +81,7 @@ fn row(key: string, count: int) -> string {
 // ---------------------------------------------------------------------------
 
 main flow report {
-  in  log: path
+  in  log: path = path(text: "/var/log/dpkg.log")   // rotated copies: --log /var/log/dpkg.log.1 or .2.gz
   in  since: duration = 7d
   in  top: int = 10
   in  match: string?
@@ -140,7 +140,7 @@ main flow report {
 // ---------------------------------------------------------------------------
 
 private flow load {
-  in  log: path
+  in  log: path = path(text: "/var/log/dpkg.log")   // rotated copies: --log /var/log/dpkg.log.1 or .2.gz
   in  match: string?
   out events: list<{day: string, epoch: int, action: string, package: string}>
 
@@ -191,6 +191,6 @@ test "report counts installs and ignores status lines" {
     "2026-10-06 17:19:35 remove foo:amd64 1.0 <none>"
   ]
   stub date_epoch yields lines: ["1791306000"]   // every event gets the same timestamp
-  let r = run report(log: path(text: "/var/log/dpkg.log"), since: 3650d)
+  let r = run report(since: 3650d)
   expect r.changes == 2
 }

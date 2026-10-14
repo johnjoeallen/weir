@@ -293,3 +293,13 @@ fn remote_components_are_reported_once_without_a_cascade() {
     assert_eq!(o.stderr.matches(": E-").count(), 1, "{}", o.stderr);
     assert!(o.stderr.contains("E-USE-REMOTE-UNSUPPORTED"));
 }
+
+#[test]
+fn a_script_given_directly_can_pick_a_mode_with_a_flag() {
+    let p = script("main flow a {\n  out r: int\n  set r = 1\n}\ntest \"t\" {\n  let x = run a()\n  expect x.r == 1\n}\n");
+    assert_eq!(weir_args(&[s(&p), "--check"]).code, 0);
+    let t = weir_args(&[s(&p), "--test"]);
+    assert_eq!(t.code, 0, "{}", t.stderr);
+    assert!(t.stdout.contains("1 passed"), "{}", t.stdout);
+    assert!(weir_args(&[s(&p), "--list"]).stdout.contains("out r"));
+}

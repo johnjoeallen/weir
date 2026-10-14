@@ -28,6 +28,7 @@ Weir: scripts that glue programs together, checked before they run
 usage:
   weir run   <file> [flow] [--flags]    run a flow (the `main` flow by default)
   weir <file> [flow] [--flags]         the same, so a `#!/usr/bin/env weir` script can be executed directly
+  weir <file> --check | --test | --list   pick another mode (`./script.weir --check`)
   weir check <file> [--json]            check a script without running anything
   weir list  <file> [--manifest]        list flows, their inputs and outputs
   weir test  [path]                     run the `test` blocks of a file or folder
@@ -77,7 +78,7 @@ pub fn main_entry() -> i32 {
         },
         // `weir script.weir ...` is `weir run script.weir ...`, which is what a
         // `#!/usr/bin/env weir` line makes the kernel execute.
-        Some(file) if file.ends_with(".weir") || std::path::Path::new(file).is_file() => cmd_run(&args),
+        Some(file) if file.ends_with(".weir") || std::path::Path::new(file).is_file() => cmd_script(&args),
         Some(other) => {
             eprintln!("weir: unknown command `{other}`\n\n{USAGE}");
             EXIT_USAGE
@@ -302,6 +303,20 @@ fn absolutize(p: &str) -> String {
     }
 }
 
+/// `weir FILE [--check | --test | --list | --run] ...`: a script given directly can
+/// pick a mode with a flag, since a shebang line leaves no room for a command word.
+fn cmd_script(args: &[String]) -> i32 {
+    let mode = args[1..].iter().find(|a| matches!(a.as_str(), "--check" | "--test" | "--list" | "--run"));
+    let Some(mode) = mode else { return cmd_run(args) };
+    let rest: Vec<String> = args.iter().filter(|a| *a != mode).cloned().collect();
+    match mode.as_str() {
+        "--check" => cmd_check(&rest),
+        "--test" => cmd_test(&rest),
+        "--list" => cmd_list(&rest),
+        _ => cmd_run(&rest),
+    }
+}
+
 // ---- weir run -------------------------------------------------------------
 
 #[derive(Default)]
@@ -383,6 +398,9 @@ fn cmd_run(args: &[String]) -> i32 {
             None => {
                 let names: Vec<&str> = entry.flows().filter(|f| f.vis != Vis::Private).map(|f| f.name.as_str()).collect();
                 eprintln!("weir: {file} has no flow `{n}`; runnable flows: {}", names.join(", "));
+                if matches!(n.as_str(), "check" | "test" | "list" | "run") {
+                    eprintln!("hint: `{n}` is a weir command, not a flow of this script; use `weir {n} {file}` or `{file} --{n}`");
+                }
                 return EXIT_USAGE;
             }
         },
