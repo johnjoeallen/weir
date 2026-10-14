@@ -18,7 +18,7 @@ strip = true
 
 [package.metadata.deb]
 maintainer = "Weir Maintainers"
-revision = "3"
+revision = "4"
 section = "devel"
 depends = "$auto, coreutils"
 assets = [
