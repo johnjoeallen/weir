@@ -727,50 +727,77 @@ prints a warning.</p>
 script's help and exits 2. Nothing runs by accident. See
 <a href="../cli/#running-a-script-directly">Command line</a> for why <code>-S</code> is needed.</p>
 <h2 id="small-example">Small example<a class="headerlink" href="#small-example" title="Permanent link">&para;</a></h2>
-<p>This script prints the lines of <code>/etc/hosts</code> that are not comments. It can see
-<code>/etc</code> read-only and nothing else, and it has a test that stubs the <code>cat</code> program.</p>
+<p>The script as a whole can see <code>/etc</code> and <code>/var/log</code>, both read-only. Each of its two
+filters gets a smaller view: <code>cat_hosts</code> sees <code>/etc</code> but not <code>/var/log</code>, and
+<code>count_lines</code> sees <code>/var/log</code> but not <code>/etc</code>. The test stubs both programs, so it
+runs nothing.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>#!/usr/bin/env -S weir --run
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>sandbox {
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>  mount system
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  mount "/etc" ro
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>}
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>filter cat_file {
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  program "cat"
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>  in file: path
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  args ["--", file]
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  sandbox {
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    see system
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    see "/etc" ro
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>  }
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>  takes none
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>  yields lines
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>}
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>main flow hosts {
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>  in  file: path = path(text: "/etc/hosts")
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>  out n: int
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>  let rows = cat_file(file: file)
-<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>    .filter(where: not starts_with(text: it, prefix: "#"))
-<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>  for r in rows {
-<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>    print(text: r)
-<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>  }
-<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>  set n = rows.count()
-<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>}
-<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>
-<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>test "counts the lines that are not comments" {
-<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>  stub cat_file yields lines: ["# comment", "127.0.0.1 localhost"]
-<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>  let r = run hosts()
-<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>  expect r.n == 1
-<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>}
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>// The script as a whole can see /etc and /var/log, both read-only.
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>sandbox {
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  mount system
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  mount "/etc" ro
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  mount "/var/log" ro
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>}
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>// This program can read /etc but has no view of /var/log at all.
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>filter cat_hosts {
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  program "cat"
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>  in file: path
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>  args ["--", file]
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>  sandbox {
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>    see system
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>    see "/etc" ro
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>  }
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>  takes none
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>  yields lines
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>}
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>// This one is the other way round: it can read /var/log but not /etc.
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>filter count_lines {
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>  program "wc"
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>  in file: path
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>  args ["-l", file]
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>  sandbox {
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>    see system
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>    see "/var/log" ro
+<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>  }
+<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>  takes none
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>  yields lines
+<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>}
+<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>
+<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>main flow hosts {
+<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>  in  file: path = path(text: "/etc/hosts")
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>  out n: int
+<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>
+<a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a>  let rows = cat_hosts(file: file)
+<a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a>    .filter(where: not starts_with(text: it, prefix: "#"))
+<a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a>  for r in rows {
+<a id="__codelineno-4-43" name="__codelineno-4-43" href="#__codelineno-4-43"></a>    print(text: r)
+<a id="__codelineno-4-44" name="__codelineno-4-44" href="#__codelineno-4-44"></a>  }
+<a id="__codelineno-4-45" name="__codelineno-4-45" href="#__codelineno-4-45"></a>  print(text: "dpkg.log: ${first(of: count_lines(file: path(text: "/var/log/dpkg.log")))}")
+<a id="__codelineno-4-46" name="__codelineno-4-46" href="#__codelineno-4-46"></a>  set n = rows.count()
+<a id="__codelineno-4-47" name="__codelineno-4-47" href="#__codelineno-4-47"></a>}
+<a id="__codelineno-4-48" name="__codelineno-4-48" href="#__codelineno-4-48"></a>
+<a id="__codelineno-4-49" name="__codelineno-4-49" href="#__codelineno-4-49"></a>test "counts the lines that are not comments" {
+<a id="__codelineno-4-50" name="__codelineno-4-50" href="#__codelineno-4-50"></a>  stub cat_hosts yields lines: ["# comment", "127.0.0.1 localhost"]
+<a id="__codelineno-4-51" name="__codelineno-4-51" href="#__codelineno-4-51"></a>  stub count_lines yields lines: ["42 /var/log/dpkg.log"]
+<a id="__codelineno-4-52" name="__codelineno-4-52" href="#__codelineno-4-52"></a>  let r = run hosts()
+<a id="__codelineno-4-53" name="__codelineno-4-53" href="#__codelineno-4-53"></a>  expect r.n == 1
+<a id="__codelineno-4-54" name="__codelineno-4-54" href="#__codelineno-4-54"></a>}
 </code></pre></div>
 <p>Save it as <code>hosts.weir</code> and make it executable with <code>chmod +x hosts.weir</code>. Then:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>weir<span class="w"> </span>check<span class="w"> </span>hosts.weir<span class="w">     </span><span class="c1"># static check, nothing runs</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>weir<span class="w"> </span><span class="nb">test</span><span class="w">  </span>hosts.weir<span class="w">     </span><span class="c1"># run the test block with the program stubbed</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>weir<span class="w"> </span><span class="nb">test</span><span class="w">  </span>hosts.weir<span class="w">     </span><span class="c1"># run the test block with the programs stubbed</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>./hosts.weir<span class="w">              </span><span class="c1"># run it (the shebang line supplies --run)</span>
 </code></pre></div>
+<p>To see the restriction work, point the first filter at a file it can't see:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./hosts.weir<span class="w"> </span>--file<span class="w"> </span>/var/log/dpkg.log
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># error in hosts: ExecError: `cat -- /var/log/dpkg.log` exited with code 1:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1">#   cat: /var/log/dpkg.log: No such file or directory</span>
+</code></pre></div>
+<p>The file exists on the host and the script mounts it, but <code>cat_hosts</code> has no
+<code>/var/log</code> in its view.</p>
 <p>The full language is described in the <a href="../DESIGN/">design document</a>.</p>
 
 
