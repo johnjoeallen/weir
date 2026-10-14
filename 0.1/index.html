@@ -624,7 +624,7 @@ that shape implied. Weir makes it the language, and checks it before anything ru
 <h2 id="what-you-get">What you get<a class="headerlink" href="#what-you-get" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Typed inputs become the command line.</strong> <code>--help</code> is generated, and a bad
-  value is rejected before the first step runs (exit 2).</li>
+  value is rejected before the first step runs (<code>weir</code> exits with return code 2).</li>
 <li><strong>Commands take argument lists, not strings.</strong> There is no shell, so quoting
   bugs cannot be written.</li>
 <li><strong>Every script declares the filesystem it runs in.</strong> The <code>sandbox</code> block is

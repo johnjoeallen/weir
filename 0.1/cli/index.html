@@ -413,10 +413,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#exit-codes" class="md-nav__link">
+  <a href="#return-codes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Exit codes
+        Return codes
       
     </span>
   </a>
@@ -599,10 +599,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#exit-codes" class="md-nav__link">
+  <a href="#return-codes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Exit codes
+        Return codes
       
     </span>
   </a>
@@ -653,7 +653,7 @@ A script that starts with</p>
 after the interpreter path as a single argument, and plain <code>env</code> would look for a
 program literally named <code>weir --run</code>.</p>
 <p><code>--run</code> is required on purpose. With a plain <code>#!/usr/bin/env weir</code> line, executing
-the script only shows its help and exits 2, so a file never acts by accident. You
+the script only shows its help and exits with return code 2, so a file never acts by accident. You
 can also pass it yourself: <code>weir script.weir --run</code>. <code>weir run script.weir</code> always runs.</p>
 <p>The other modes are subcommands only: <code>weir check FILE</code>, <code>weir test FILE</code> and
 <code>weir list FILE</code>.</p>
@@ -666,8 +666,8 @@ is unaffected, because the kernel passes its full path.</p>
 <li><code>in top: int = 10</code> becomes <code>--top &lt;int&gt;</code>. The default, <code>10</code>, is shown in <code>--help</code>.</li>
 <li>A <code>list&lt;T&gt;</code> input is given by repeating its option: <code>--tag a --tag b</code>.</li>
 <li>A <code>bool</code> input becomes a pair of switches, <code>--name</code> and <code>--no-name</code>.</li>
-<li>A value that cannot be read as the input's type is a usage error (exit 2), and the
-  message names the option.</li>
+<li>A value that cannot be read as the input's type is a usage error. <code>weir</code> exits with
+  return code 2, and the message names the option.</li>
 <li>A <code>path</code> value is a path on the host. Weir translates it to the path inside the
   sandbox through the sandbox mounts.</li>
 </ul>
@@ -724,7 +724,7 @@ is unaffected, because the kernel passes its full path.</p>
 </table>
 <p>A <code>secret</code> input is never accepted on the command line. It comes from
 <code>WEIR_SECRET_&lt;NAME&gt;</code>, <code>--secret-file</code> or <code>--secret-stdin</code>.</p>
-<h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Permanent link">&para;</a></h2>
+<h2 id="return-codes">Return codes<a class="headerlink" href="#return-codes" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>

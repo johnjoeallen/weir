@@ -710,7 +710,7 @@ under <code>/usr/share/doc/weir/</code>. The package links the host libc dynamic
 <p class="admonition-title">Platform</p>
 <p>The sandbox requires Linux with unprivileged user namespaces enabled. Weir has
 only been tested on Linux (x86_64). If the sandbox cannot be created, <code>weir run</code>
-exits with code 4. Passing <code>--no-sandbox</code> runs the script without a sandbox and
+exits with return code 4. Passing <code>--no-sandbox</code> runs the script without a sandbox and
 prints a warning.</p>
 </div>
 <h2 id="run-an-example">Run an example<a class="headerlink" href="#run-an-example" title="Permanent link">&para;</a></h2>
@@ -724,7 +724,7 @@ prints a warning.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./examples/dpkgwatch.weir<span class="w"> </span>--top<span class="w"> </span><span class="m">5</span>
 </code></pre></div>
 <p>With a plain <code>#!/usr/bin/env weir</code> line, executing the file only shows the
-script's help and exits 2. Nothing runs by accident. See
+script's help and exits with return code 2. Nothing runs by accident. See
 <a href="../cli/#running-a-script-directly">Command line</a> for why <code>-S</code> is needed.</p>
 <h2 id="small-example">Small example<a class="headerlink" href="#small-example" title="Permanent link">&para;</a></h2>
 <p>The script as a whole can see <code>/etc</code> and <code>/var/log</code>, both read-only. Each of its two
@@ -740,7 +740,7 @@ runs nothing.</p>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  mount "/var/log" ro
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>}
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>// This program can read /etc but has no view of /var/log at all.
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>// This filter can see /etc but not /var/log.
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>filter cat_hosts {
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  program "cat"
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>  in file: path
@@ -753,7 +753,7 @@ runs nothing.</p>
 <a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>  yields lines
 <a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>}
 <a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>// This one is the other way round: it can read /var/log but not /etc.
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>// This filter can see /var/log but not /etc.
 <a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>filter count_lines {
 <a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>  program "wc"
 <a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>  in file: path
