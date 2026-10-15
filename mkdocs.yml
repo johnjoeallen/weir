@@ -66,6 +66,7 @@ nav:
   - Running programs: commands.md
   - Command line: cli.md
   - The sandbox: sandbox.md
+  - Using Weir in CI: ci.md
   - Examples: examples.md
   - Design: DESIGN.md
   - Implementation status: IMPLEMENTATION.md
