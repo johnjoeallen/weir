@@ -1,0 +1,906 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A small interpreted language for scripts that glue programs together, checked before they run.">
+      
+      
+      
+        <link rel="canonical" href="https://johnjoeallen.github.io/weir/0.3/IMPLEMENTATION/">
+      
+      
+        <link rel="prev" href="../DESIGN/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Implementation status - Weir</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#implementation-status" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Weir" class="md-header__button md-logo" aria-label="Weir" data-md-component="logo">
+      
+  <img src="../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Weir
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Implementation status
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/johnjoeallen/weir" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    johnjoeallen/weir
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Weir" class="md-nav__button md-logo" aria-label="Weir" data-md-component="logo">
+      
+  <img src="../assets/logo.svg" alt="logo">
+
+    </a>
+    Weir
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/johnjoeallen/weir" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    johnjoeallen/weir
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running programs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sandbox/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The sandbox
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using Weir in CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DESIGN/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation status
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-not-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is not built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions-where-the-design-was-silent-or-inconsistent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decisions where the design was silent or inconsistent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limits-of-the-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limits of the sandbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-not-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is not built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions-where-the-design-was-silent-or-inconsistent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decisions where the design was silent or inconsistent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limits-of-the-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limits of the sandbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/johnjoeallen/weir/edit/main/docs/IMPLEMENTATION.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="implementation-status">Implementation Status<a class="headerlink" href="#implementation-status" title="Permanent link">&para;</a></h1>
+<p>This describes the reference interpreter in <code>src/</code>, measured against <a href="../DESIGN/">DESIGN.md</a>. It is Rust with no dependencies, and Linux is the only platform on which it has been run.</p>
+<p>Tests: <code>cargo test</code> runs 21 unit tests (<code>src/tests.rs</code>) and 29 integration tests (<code>tests/cli.rs</code>) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.</p>
+<h2 id="what-is-built">What is built<a class="headerlink" href="#what-is-built" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Design section</th>
+<th>State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2. Execution model</td>
+<td><code>run</code>, <code>check</code>, <code>list</code>, <code>test</code>. <code>run</code> always checks first. Exit codes 0 to 4 as specified. <code>check --json</code>.</td>
+</tr>
+<tr>
+<td>3. Declarations</td>
+<td><code>flow</code>, <code>filter</code>, <code>fn</code>, <code>test</code>.</td>
+</tr>
+<tr>
+<td>4. Flow anatomy</td>
+<td><code>in</code>, <code>out</code>, <code>requires</code>, <code>lock</code>, <code>finally</code>; steps with <code>when</code>, <code>confirmable</code>, <code>as</code> labels; the repeated-step label rule (<code>E-STEP-LABEL</code>, <code>E-DUP-STEP</code>).</td>
+</tr>
+<tr>
+<td>5. Types</td>
+<td>All types parse. Values are checked against their declared type at run time (<code>let x: T</code>, flow and fn inputs, outputs, <code>set</code>). <code>map&lt;K,V&gt;</code> exists as a type only: there is no map literal.</td>
+</tr>
+<tr>
+<td>6. Commands and errors</td>
+<td>Argument lists, no shell. <code>ExecError</code>, <code>CapabilityError</code>, <code>IoError</code>, <code>ParseError</code>, typed <code>catch</code>, <code>try</code> as an attempt record, <code>fail</code>. <code>Timeout</code> is reserved and never thrown.</td>
+</tr>
+<tr>
+<td>7. Sandbox</td>
+<td>Real: user + mount + PID namespaces, a tmpfs root populated with bind mounts, <code>pivot_root</code>, private <code>/tmp</code>, minimal <code>/dev</code>, <code>/proc</code>. Host-to-inside path translation, <code>ro</code>/<code>rw</code> enforcement (also reported by the interpreter with the mount named), <code>see</code> lines on a filter and <code>within</code> blocks, both narrowing in a nested mount namespace, <code>--ro</code>, <code>--deny-exec</code>, <code>--sandbox required|auto|off</code> (also <code>WEIR_SANDBOX</code>; <code>--no-sandbox</code> is <code>off</code>). Exit 4 if it cannot be created, unless the mode is <code>auto</code>. Static checks <code>E-SANDBOX-EXEC-UNREACHABLE</code>, <code>E-SANDBOX-LOCK-UNSHARED</code>, <code>E-SANDBOX-NOT-ENTRY</code>, <code>E-SEE-UNMOUNTED</code>, <code>W-NO-SANDBOX</code>.</td>
+</tr>
+<tr>
+<td>8. Calls</td>
+<td>Named arguments only; <code>W-DEFAULT-ARG</code> for literal defaults, with <code>// weir:allow CODE</code>.</td>
+</tr>
+<tr>
+<td>9. Pipelines</td>
+<td><code>lines map filter take unique count count_by sort_by</code>, declared filters as stages, <code>it</code>.</td>
+</tr>
+<tr>
+<td>10. Components</td>
+<td>Local <code>use "./path.weir"</code> and <code>use "./path.weir#flow"</code>. Private flows are not importable.</td>
+</tr>
+<tr>
+<td>11. CLI</td>
+<td>Flags generated from inputs, <code>--help</code>, <code>--confirm</code>, <code>--plan</code>, <code>--json</code>, <code>--out</code>, secrets from <code>WEIR_SECRET_&lt;NAME&gt;</code>, <code>--secret-file</code> (mode checked) and <code>--secret-stdin</code>; a secret on argv is exit 2.</td>
+</tr>
+<tr>
+<td>12. Testing</td>
+<td><code>fixture dir</code>, <code>stub</code>, <code>expect</code>, <code>run &lt;flow&gt;(...)</code>.</td>
+</tr>
+<tr>
+<td>7.3.1 Scoped views</td>
+<td><code>within &lt;items&gt; { ... }</code> as a statement or a value, <code>return</code>, nesting by intersection, built-ins held to the view (<code>exists</code> is <code>false</code>), <code>E-WITHIN-NO-RETURN</code>, <code>E-FN-IMPURE</code>. A filter writes <code>see</code> lines directly; the old <code>sandbox { see }</code> form in a filter is <code>E-FILTER-SANDBOX</code>.</td>
+</tr>
+<tr>
+<td>15, 16. Grammar, reserved words</td>
+<td>As sketched, plus the additions below.</td>
+</tr>
+</tbody>
+</table>
+<p>Checker rules beyond those named above: unknown names, calls, stages and arguments with "did you mean" hints; missing, duplicate and unknown arguments; literal argument and default type mismatches; <code>it</code> outside a stage; assignment to a <code>let</code>; optional values used without <code>if let</code>; <code>secret</code> values used outside <code>env</code>/stdin; <code>fn</code> purity; <code>requires</code> purity; <code>W-SHELL-STRING</code>, <code>W-DESTRUCTIVE-PROGRAM</code>, <code>E-DYNAMIC-CMD</code>; filters that cannot start or join a pipeline; <code>catch</code> of a name that is not an error type. A failed import suppresses the follow-on "unknown name" errors it would cause.</p>
+<h2 id="what-is-not-built">What is not built<a class="headerlink" href="#what-is-not-built" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Remote components and the lockfile.</strong> <code>use "github:..."</code> and <code>use "https://..."</code> are reported as <code>E-USE-REMOTE-UNSUPPORTED</code>; <code>weir lock</code> has nothing to pin. <code>examples/logwatch.weir</code> imports a local <code>examples/parse_access.weir</code> instead (the remote component it once named does not exist), so both examples check, test and run.</li>
+<li><strong><code>weir sandbox suggest</code>.</strong></li>
+<li><strong>Streaming pipelines (9.2).</strong> Every stage materialises its input into a list, so <code>take</code> does not stop the upstream program and the log is held in memory. The broken-pipe question in 19.5 does not arise yet.</li>
+<li><strong>A complete <code>--plan</code> (19.5).</strong> <code>--plan</code> is a dry run: reads happen, writes and commands are printed and not executed, and a command yields an empty result. A branch that depends on a command's output can therefore differ from a real run, and a <code>fail</code> stops the plan.</li>
+<li><strong>Static type inference.</strong> The checker does not infer types through pipelines or <code>let</code>, so a type error that depends on a computed value is found at run time with a message naming the value and the expected type.</li>
+<li><strong>Deeper <code>secret</code> analysis.</strong> Direct uses are caught. A secret passed through a <code>fn</code> return value or a record field is not tracked.</li>
+<li><strong>A static musl binary</strong> (the design asks for one). The release binary links the host libc dynamically. Everything the sandbox needs from libc is loaded before the pivot, but this is not the guarantee the design describes.</li>
+<li><strong>Non-Linux sandbox.</strong> The module is gated by <code>cfg(target_os = "linux")</code> and other platforms exit 4. Other platforms have not been built.</li>
+<li><strong>Network confinement</strong> is outside the design's v1.</li>
+</ul>
+<h2 id="decisions-where-the-design-was-silent-or-inconsistent">Decisions where the design was silent or inconsistent<a class="headerlink" href="#decisions-where-the-design-was-silent-or-inconsistent" title="Permanent link">&para;</a></h2>
+<p>These are the places a reader of the design could reasonably have expected something else.</p>
+<ol>
+<li><strong><code>if</code> as an expression.</strong> <code>examples/logwatch.weir</code> writes <code>let raw: list&lt;string&gt; = if ... { a } else { b }</code>, which the grammar sketch omits. It is supported: <code>else</code> is required and a branch's value is its last expression.</li>
+<li><strong>Sandbox <code>in</code> paths may be strings.</strong> The design's own example is <code>in logs: path = "/var/log/nginx"</code> in the sandbox block, but flow inputs write <code>path(text: "...")</code> because a string is never implicitly a path. A sandbox <code>in</code> is a host path evaluated before the sandbox exists, so a string literal is accepted there only.</li>
+<li><strong>A flow call's value is a record of its outputs</strong>, so <code>load(...).entries</code> and <code>double(n: 4).r</code> work.</li>
+<li><strong>Outputs are write-only.</strong> <code>set</code> assigns; reading an output name is <code>E-UNKNOWN-NAME</code> with a hint to keep the value in a <code>var</code>.</li>
+<li><strong><code>try expr</code> yields <code>{ok, code, value, message}</code>.</strong> <code>fail</code> is not catchable by <code>catch</code>, but <code>try</code> captures it.</li>
+<li><strong>Operator precedence follows 15 literally:</strong> unary <code>not</code> binds tighter than comparison, so <code>not a == b</code> means <code>(not a) == b</code>.</li>
+<li><strong><code>with_suffix(text: ".bak")</code> appends</strong> to the file name (<code>deny.conf</code> becomes <code>deny.conf.bak</code>), rather than replacing the extension.</li>
+<li><strong><code>run(cmd:, args:)</code> yields lines</strong>, and takes an optional <code>ok_codes</code>.</li>
+<li><strong>Name resolution order for a stage:</strong> native stages, then declared filters, then a built-in applied to the value (<code>path.with_suffix(...)</code>). A declared filter, fn or flow cannot reuse a built-in or native-stage name (<code>E-SHADOWS-BUILTIN</code>).</li>
+<li><strong><code>first</code> and <code>nth</code> out of range, and <code>int(text: "abc")</code>, throw <code>ParseError</code>.</strong></li>
+<li><strong>Tests never run real programs.</strong> A filter without a <code>stub</code> fails the test with the line to add. A stub's value is checked against the filter's <code>yields</code>. A flow that fails inside <code>run</code> fails the test unless it is wrapped in <code>try</code>. Fixtures are directories of text files, mounted read-write at their stated path.</li>
+<li><strong>No <code>sandbox</code> block means unconfined,</strong> as in 7.6, modelled as a single read-write <code>/</code> mount. Built-ins then act on host paths.</li>
+<li><strong>The checker reads <code>PATH</code>.</strong> 2.1 says <code>check</code> reads nothing but source files, while 7.2 needs a program's resolved path to test it against the mounts. It resolves programs on this machine; a program that is absent is <code>W-PROGRAM-NOT-FOUND</code>, not an error, so a script can be checked on a machine that is not the target.</li>
+<li><strong>The sandbox is entered in-process, not by re-executing <code>weir __sandbox-run</code>.</strong> The process is single-threaded at that point, so <code>unshare(CLONE_NEWUSER)</code> is allowed. The observable behaviour is the same. The original process stays on the host to wait, forward <code>SIGHUP</code>/<code>SIGINT</code>/<code>SIGTERM</code>, return the child's exit status and remove the temporary root.</li>
+<li><strong>The mount namespace is created in the child, not the parent.</strong> <code>pivot_root</code> changes the root of every process in the namespace, so a shared namespace dragged the parent off the host and left a temporary directory behind. This was found by a test.</li>
+<li><strong>Step identity.</strong> A flow call is named after the flow, an inline block after its name, and a non-flow expression statement that carries <code>when</code> or <code>confirmable</code> is <code>line N</code>.</li>
+<li><strong>Imported flows run under the entry file's sandbox,</strong> and resolve their own filters and fns within their own file.</li>
+<li><strong>Test stubs are named in the entry file.</strong> A <code>stub</code> can only name a filter declared in the file the test is in, and <code>lock</code> is not taken in test mode. A component that must be testable from its importer should not depend on a program; <code>parse_access.weir</code> does its date arithmetic in pure <code>fn</code>s for that reason (and to avoid one process per log line).</li>
+<li>
+<p><strong>A <code>within</code> block builds one narrowed root per program,</strong> not one per block. It costs about 0.6 ms per program (200 <code>run</code> calls: 0.18 s inside a block, 0.05 s outside), so sharing a root through <code>setns</code> was not worth the complexity. An item in a filter's own <code>see</code> lines is cut down to the view by intersection; <code>system</code> only if both have it.</p>
+</li>
+<li>
+<p><strong><code>--sandbox auto</code> probes first.</strong> Falling back after the real <code>enter</code> has failed is not possible: <code>unshare(CLONE_NEWPID)</code> has by then changed what this process's children become, and a failure in the child comes too late. So <code>auto</code> forks a throwaway child that builds and pivots into an empty root and reports the reason through a pipe (<code>sandbox::probe</code>, about a millisecond). Only if that succeeds does the real <code>enter</code> run, and <code>required</code> skips the probe.</p>
+</li>
+</ol>
+<h2 id="known-limits-of-the-sandbox">Known limits of the sandbox<a class="headerlink" href="#known-limits-of-the-sandbox" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The interpreter is PID 1 of the new PID namespace but reaps only the children it starts. A grandchild orphaned onto it stays a zombie until the run ends.</li>
+<li>A program's environment is rebuilt (<code>PATH</code>, <code>LANG</code>, <code>TZ</code>, <code>HOME=/tmp</code> and declared <code>env</code>), but <code>PATH</code> keeps the host's value, so it can name directories that do not exist inside.</li>
+<li>A <code>ro</code> mount made recursively is remounted read-only including its submounts. Each submount keeps the flags the host gave it.</li>
+<li>A filter with <code>see</code> lines, or a program started inside a <code>within</code> block, runs in a nested mount namespace under <code>/tmp/.weir-see-&lt;pid&gt;</code>; an empty directory of that name remains in the sandbox's private <code>/tmp</code> until the run ends.</li>
+<li>Verified on Linux 6.12 x86_64 with unprivileged user namespaces enabled. The <code>aarch64</code> <code>pivot_root</code> syscall number is present and untested.</li>
+<li>Nested flow calls are limited to 64 levels and nested fn calls to 200 (one shared depth counter), so a runaway recursive script fails with an error instead of overflowing the stack.</li>
+</ul>
+<h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>src/lexer.rs     tokens; drops newlines that continue an expression
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>src/parser.rs    hand-written recursive descent; first error only, so no cascades
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>src/ast.rs       syntax tree
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>src/loader.rs    entry file and local `use` imports
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>src/check.rs     weir check: names, arguments, purity, sandbox declarations, lints
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>src/interp.rs    tree-walking interpreter: flows, steps, pipelines, filters, programs
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>src/builtins.rs  built-in signatures (shared with the checker) and pure implementations
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>src/mounts.rs    the mount table and host/inside path translation
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>src/sandbox.rs   namespaces, pivot_root, per-filter narrowing (Linux only)
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>src/cli.rs       commands, generated flags, test runner
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>src/value.rs, json.rs, diag.rs, error.rs, pretty.rs
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      GNU General Public License v3.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.top", "content.code.copy", "content.action.edit", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

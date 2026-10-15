@@ -1,0 +1,39 @@
+/* Weir logo to the left of every page's top-level heading. */
+.md-typeset h1::before {
+  content: "";
+  display: inline-block;
+  width: 1.4em;
+  height: 1.4em;
+  margin-right: 0.5em;
+  vertical-align: -0.35em;
+  background: url("logo.svg") no-repeat center center;
+  background-size: contain;
+}
+
+.weir-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin: 1.2rem 0 1.6rem;
+}
+
+.weir-button {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--md-primary-fg-color);
+  border-radius: 0.3rem;
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color) !important;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.weir-button:hover {
+  opacity: 0.82;
+}
+
+.weir-button-secondary {
+  background: transparent;
+  color: var(--md-primary-fg-color) !important;
+}
