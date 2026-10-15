@@ -178,6 +178,45 @@ fn no_sandbox_refuses_remapping_mounts() {
 }
 
 #[test]
+fn sandbox_mode_must_be_required_auto_or_off() {
+    let p = script("sandbox {\n  mount system\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
+    let o = weir_args(&["run", s(&p), "--sandbox", "maybe"]);
+    assert_eq!(o.code, 2, "{}", o.stderr);
+    assert!(o.stderr.contains("required, auto or off"), "{}", o.stderr);
+    let mut c = weir();
+    c.args(["run", s(&p)]).env("WEIR_SANDBOX", "maybe");
+    let o = run_cmd(c);
+    assert_eq!(o.code, 2, "{}", o.stderr);
+    assert!(o.stderr.contains("WEIR_SANDBOX"), "{}", o.stderr);
+}
+
+#[test]
+fn sandbox_off_runs_unconfined_with_a_warning() {
+    let p = script("sandbox {\n  mount system\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
+    let o = weir_args(&["run", s(&p), "--sandbox", "off", "--json"]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("without the filesystem sandbox"), "{}", o.stderr);
+    assert!(o.stdout.contains("\"sandbox\": false"), "{}", o.stdout);
+    let mut c = weir();
+    c.args(["run", s(&p), "--json"]).env("WEIR_SANDBOX", "off");
+    let o = run_cmd(c);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stdout.contains("\"sandbox\": false"), "{}", o.stdout);
+}
+
+#[test]
+fn sandbox_auto_confines_when_it_can_and_warns_when_it_cannot() {
+    let p = script("sandbox {\n  mount system\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
+    let o = weir_args(&["run", s(&p), "--sandbox", "auto", "--json"]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    if o.stderr.contains("the sandbox could not be created") {
+        assert!(o.stdout.contains("\"sandbox\": false"), "{}", o.stdout);
+    } else {
+        assert!(o.stdout.contains("\"sandbox\": true"), "{}", o.stdout);
+    }
+}
+
+#[test]
 fn read_only_mount_error_names_the_mount() {
     let dir = scratch().join(format!("weir-ro-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

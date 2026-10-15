@@ -27,8 +27,8 @@ under `/usr/share/doc/weir/`. The package links the host libc dynamically.
 !!! note "Platform"
     The sandbox requires Linux with unprivileged user namespaces enabled. Weir has
     only been tested on Linux (x86_64). If the sandbox cannot be created, `weir run`
-    exits with return code 4. Passing `--no-sandbox` runs the script without a sandbox and
-    prints a warning.
+    exits with return code 4. `--sandbox auto` runs the script without a sandbox, with a
+    warning, only if the sandbox cannot be created. `--sandbox off` never builds one.
 
 ## Run an example
 

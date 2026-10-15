@@ -2,7 +2,7 @@
 
 This describes the reference interpreter in `src/`, measured against [DESIGN.md](DESIGN.md). It is Rust with no dependencies, and Linux is the only platform on which it has been run.
 
-Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 26 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
+Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 29 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
 
 ## What is built
 
@@ -13,7 +13,7 @@ Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 26 integration tests
 | 4. Flow anatomy | `in`, `out`, `requires`, `lock`, `finally`; steps with `when`, `confirmable`, `as` labels; the repeated-step label rule (`E-STEP-LABEL`, `E-DUP-STEP`). |
 | 5. Types | All types parse. Values are checked against their declared type at run time (`let x: T`, flow and fn inputs, outputs, `set`). `map<K,V>` exists as a type only: there is no map literal. |
 | 6. Commands and errors | Argument lists, no shell. `ExecError`, `CapabilityError`, `IoError`, `ParseError`, typed `catch`, `try` as an attempt record, `fail`. `Timeout` is reserved and never thrown. |
-| 7. Sandbox | Real: user + mount + PID namespaces, a tmpfs root populated with bind mounts, `pivot_root`, private `/tmp`, minimal `/dev`, `/proc`. Host-to-inside path translation, `ro`/`rw` enforcement (also reported by the interpreter with the mount named), `see` lines on a filter and `within` blocks, both narrowing in a nested mount namespace, `--ro`, `--deny-exec`, `--no-sandbox`. Exit 4 if it cannot be created. Static checks `E-SANDBOX-EXEC-UNREACHABLE`, `E-SANDBOX-LOCK-UNSHARED`, `E-SANDBOX-NOT-ENTRY`, `E-SEE-UNMOUNTED`, `W-NO-SANDBOX`. |
+| 7. Sandbox | Real: user + mount + PID namespaces, a tmpfs root populated with bind mounts, `pivot_root`, private `/tmp`, minimal `/dev`, `/proc`. Host-to-inside path translation, `ro`/`rw` enforcement (also reported by the interpreter with the mount named), `see` lines on a filter and `within` blocks, both narrowing in a nested mount namespace, `--ro`, `--deny-exec`, `--sandbox required|auto|off` (also `WEIR_SANDBOX`; `--no-sandbox` is `off`). Exit 4 if it cannot be created, unless the mode is `auto`. Static checks `E-SANDBOX-EXEC-UNREACHABLE`, `E-SANDBOX-LOCK-UNSHARED`, `E-SANDBOX-NOT-ENTRY`, `E-SEE-UNMOUNTED`, `W-NO-SANDBOX`. |
 | 8. Calls | Named arguments only; `W-DEFAULT-ARG` for literal defaults, with `// weir:allow CODE`. |
 | 9. Pipelines | `lines map filter take unique count count_by sort_by`, declared filters as stages, `it`. |
 | 10. Components | Local `use "./path.weir"` and `use "./path.weir#flow"`. Private flows are not importable. |
@@ -59,6 +59,8 @@ These are the places a reader of the design could reasonably have expected somet
 17. **Imported flows run under the entry file's sandbox,** and resolve their own filters and fns within their own file.
 18. **Test stubs are named in the entry file.** A `stub` can only name a filter declared in the file the test is in, and `lock` is not taken in test mode. A component that must be testable from its importer should not depend on a program; `parse_access.weir` does its date arithmetic in pure `fn`s for that reason (and to avoid one process per log line).
 19. **A `within` block builds one narrowed root per program,** not one per block. It costs about 0.6 ms per program (200 `run` calls: 0.18 s inside a block, 0.05 s outside), so sharing a root through `setns` was not worth the complexity. An item in a filter's own `see` lines is cut down to the view by intersection; `system` only if both have it.
+
+20. **`--sandbox auto` probes first.** Falling back after the real `enter` has failed is not possible: `unshare(CLONE_NEWPID)` has by then changed what this process's children become, and a failure in the child comes too late. So `auto` forks a throwaway child that builds and pivots into an empty root and reports the reason through a pipe (`sandbox::probe`, about a millisecond). Only if that succeeds does the real `enter` run, and `required` skips the probe.
 
 ## Known limits of the sandbox
 

@@ -59,7 +59,8 @@ Each input a flow declares becomes a command-line option of the same name.
 | `--deny-exec <name>` | refuse to start a program for this run |
 | `--secret-file <name>=<path>` | read a `secret` input from a file (mode 0600) |
 | `--secret-stdin <name>` | read a `secret` input from stdin |
-| `--no-sandbox` | run without the filesystem sandbox (prints a warning) |
+| `--sandbox <mode>` | `required` (the default), `auto` or `off`; see [the sandbox](sandbox.md#when-the-sandbox-cannot-be-created). `WEIR_SANDBOX` sets it too |
+| `--no-sandbox` | the same as `--sandbox off` |
 | `--help` | show the options a script generates from its inputs |
 
 A `secret` input is never accepted on the command line. It comes from

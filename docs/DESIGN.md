@@ -419,9 +419,15 @@ Network access is not a declared capability in v1, and the sandbox does not unsh
 
 The interpreter must be able to run after the host is gone. The release binary is statically linked (musl) and does not read host libraries once the sandbox is entered.
 
-**Availability.** v1 supports Linux only, because the mechanism is Linux namespaces. If the sandbox cannot be created (unprivileged user namespaces disabled, a container that forbids them, an unsupported platform), Weir exits 4 with a message naming the cause. It does not fall back to running unconfined.
+**Availability.** v1 supports Linux only, because the mechanism is Linux namespaces. If the sandbox cannot be created (unprivileged user namespaces disabled, a container that forbids them, an unsupported platform), Weir exits 4 with a message naming the cause. It does not fall back to running unconfined unless the operator asks for that with `--sandbox auto` or `WEIR_SANDBOX=auto`.
 
-The only override is the CLI flag `--no-sandbox`. It cannot be set from a script, prints a warning on stderr, and is recorded in the `--json` result as `"sandbox": false`. With `--no-sandbox` no namespaces are created and every inside path is used as a host path, so it works only for a script whose mounts all map a path to itself (`mount "/x" rw`, `mount system`). A script with a remapping mount (`mount logs at "/logs" ro`) exits 2 under `--no-sandbox`.
+The only overrides are the CLI option `--sandbox <mode>` and the environment variable `WEIR_SANDBOX`; the option wins over the variable. The modes are:
+
+- `required`, the default: build the sandbox or exit 4.
+- `auto`: build it if the host allows, and otherwise warn, naming the cause, and run without it. It is meant for a host that is already isolated, such as a CI job in a container. Weir tests whether the sandbox can be built in a short-lived child process before the script starts.
+- `off`: never build it. `--no-sandbox` is the same as `--sandbox off`.
+
+A script cannot choose its own mode. Running without a sandbox prints a warning on stderr and is recorded in the `--json` result as `"sandbox": false`. Without a sandbox no namespaces are created and every inside path is used as a host path, so it works only for a script whose mounts all map a path to itself (`mount "/x" rw`, `mount system`). A script with a remapping mount (`mount logs at "/logs" ro`) exits 2 under `off`, and exits 4 when `auto` fell back because the sandbox could not be built.
 
 A script that uses only built-ins and `fn`s still runs in the sandbox when it declares one; with no `sandbox` block it runs unconfined, and `weir check` reports `W-NO-SANDBOX` for any file that starts an external program without one. Non-Linux hosts can run such scripts.
 
@@ -564,7 +570,7 @@ A file-level `sandbox` block's `in` values generate flags in the same way ([sect
 - `--confirm`: run `confirmable` steps.
 - `--plan`: print what would happen and run nothing.
 - `--ro INSIDE_PATH`, `--deny-exec NAME`: narrow the sandbox for this run: turn a `rw` mount into `ro`, or refuse to start a program ([section 7.3](#73-filters-narrow-the-view-components-cannot-widen-it)).
-- `--no-sandbox`: run without the filesystem sandbox ([section 7.6](#76-mechanism-and-availability)). Prints a warning on stderr. Works only for scripts whose mounts all map a path to itself. Exists for hosts where sandboxs cannot be created; not settable from a script.
+- `--sandbox <required|auto|off>`: what to do when the filesystem sandbox cannot be created ([section 7.6](#76-mechanism-and-availability)); `WEIR_SANDBOX` sets the same. `--no-sandbox` is `--sandbox off`. Running without the sandbox prints a warning on stderr and works only for scripts whose mounts all map a path to itself. Not settable from a script.
 
 ### 11.2 Input flags
 
@@ -584,7 +590,7 @@ stdout carries either the script's own output or the machine-readable result, ne
 - With `--json`, stdout carries a single JSON document: `{"ok": bool, "exit": int, "outputs": {...}, "error": {...}?, "steps": [...]}`. `print` is redirected to stderr.
 - With `--out <name>`, stdout carries the single named output as raw text (a `list` becomes one element per line). `print` is redirected to stderr.
 
-Diagnostics and logs always go to stderr. The `--json` document includes `"sandbox": true` or, when `--no-sandbox` was passed, `"sandbox": false`. Outputs assigned before a failure appear in the `--json` document, so a caller can see partial results.
+Diagnostics and logs always go to stderr. The `--json` document includes `"sandbox": true` or, when the script ran without a sandbox, `"sandbox": false`. Outputs assigned before a failure appear in the `--json` document, so a caller can see partial results.
 
 **Alternative rejected: always emit the result to stdout and the human text to stderr.** It makes the common interactive case (`weir run cleanup.weir`) print nothing readable on stdout, and a script that prints and also returns data is the case this rule exists to disambiguate.
 
@@ -982,7 +988,7 @@ The bet is that these concepts are each individually easy and rarely interact, a
 - **`fn` purity versus reading the clock.** `now_epoch()` is not allowed in a `fn`, so time-dependent logic must be passed in as an argument. This is correct and mildly annoying.
 - **Secrets in filters.** `env { NAME = token }` is the only route for a secret to a program besides stdin. Some programs accept credentials only on argv. Those cannot be wrapped safely, and the design offers no answer beyond "write a wrapper".
 - **Network is outside the capability model.**
-- **The sandbox is Linux-only and may be unavailable.** It depends on unprivileged user namespaces, which are disabled on some hardened hosts and forbidden in some containers. There the run exits 4 unless the operator passes `--no-sandbox`, which works only for scripts without remapping mounts. macOS and the BSDs have no v1 sandbox, so any script that runs an external program is Linux-only in practice. For a language meant to replace bash everywhere, this is a significant limit. Whether to accept it, or to add a weaker non-Linux backend, is open.
+- **The sandbox is Linux-only and may be unavailable.** It depends on unprivileged user namespaces, which are disabled on some hardened hosts and forbidden in some containers. There the run exits 4 unless the operator chooses `--sandbox auto` or `off`, which work only for scripts without remapping mounts. macOS and the BSDs have no v1 sandbox, so any script that runs an external program is Linux-only in practice. For a language meant to replace bash everywhere, this is a significant limit. Whether to accept it, or to add a weaker non-Linux backend, is open.
 - **Command-line paths are translated, not taken literally.** An operator passes host paths and the script sees inside paths, so an error message that mentions a path must say which kind. A path that is not under any mount fails with exit 2 before the script starts. Translating paths in `list<path>` inputs and in paths embedded in other values (a URL, a config file) is not possible; a program given a host path inside a string will not find it.
 - **The interpreter lives inside the sandbox it enforces.** A bug that lets a script call a built-in on a path outside the mount table is not possible by construction, but a bug in the pre-sandbox stage (path translation, lockfile verification, secret reading) happens outside it and has host access. That stage is the part of the interpreter that must be small and audited.
 - **Script-defined mounts are verbose and easy to get wrong.** Programs need paths nobody thinks of: certificate stores, locale data, NSS modules, helper binaries, daemon sockets. Because the author lists the mounts, a missing one is the author's bug and shows up as a program failing to start or to find a library. `mount system`, the `E-SANDBOX-EXEC-UNREACHABLE` check and `weir sandbox suggest` are the mitigations. If authors find this too burdensome they will either mount broadly (a flow cannot mount `/` read-write, but `/usr`, `/etc` and `/var` are not so limited) or run with `--no-sandbox`, and the guarantee shrinks to nothing. Whether explicit mounts or automatic derivation yields better real-world sandboxs is open; the design chose explicit and records the alternative in section 7.6.

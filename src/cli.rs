@@ -44,7 +44,8 @@ run options:
   --deny-exec <name>   refuse to start a program for this run
   --secret-file <name>=<path>   read a `secret` input from a file (mode 0600)
   --secret-stdin <name>         read a `secret` input from stdin
-  --no-sandbox         run without the filesystem sandbox (see docs/DESIGN.md 7.6)
+  --sandbox <mode>     required (the default), auto or off; the environment variable WEIR_SANDBOX sets it too
+  --no-sandbox         the same as --sandbox off (see docs/DESIGN.md 7.6)
   --help               show the options a script generates from its inputs
 
 return codes: 0 success, 1 flow failure, 2 usage error, 3 check error, 4 capability denied
@@ -342,12 +343,34 @@ struct RunFlags {
     plan: bool,
     json: bool,
     out: Option<String>,
-    no_sandbox: bool,
+    sandbox: Option<SandboxMode>,
     ro: Vec<String>,
     deny_exec: Vec<String>,
     secret_files: Vec<(String, String)>,
     secret_stdin: Vec<String>,
     help: bool,
+}
+
+/// What to do when the script declares a sandbox (`--sandbox`, `WEIR_SANDBOX`).
+#[derive(Clone, Copy, PartialEq)]
+enum SandboxMode {
+    /// Build it or exit 4. The default.
+    Required,
+    /// Build it if the host allows; otherwise warn and run without it.
+    Auto,
+    /// Do not build it.
+    Off,
+}
+
+impl SandboxMode {
+    fn parse(text: &str) -> Option<SandboxMode> {
+        match text {
+            "required" => Some(SandboxMode::Required),
+            "auto" => Some(SandboxMode::Auto),
+            "off" => Some(SandboxMode::Off),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -491,7 +514,14 @@ fn cmd_run(args: &[String]) -> i32 {
             "confirm" => flags.confirm = true,
             "plan" => flags.plan = true,
             "json" => flags.json = true,
-            "no-sandbox" => flags.no_sandbox = true,
+            "no-sandbox" => flags.sandbox = Some(SandboxMode::Off),
+            "sandbox" => {
+                let v = value!();
+                match SandboxMode::parse(&v) {
+                    Some(m) => flags.sandbox = Some(m),
+                    None => return usage_err(format!("`--sandbox` takes required, auto or off, not `{v}`")),
+                }
+            }
             "out" => flags.out = Some(value!()),
             "ro" => flags.ro.push(value!()),
             "deny-exec" => flags.deny_exec.push(value!()),
@@ -515,7 +545,7 @@ fn cmd_run(args: &[String]) -> i32 {
                 } else if let Some(s) = sandbox_specs.iter().find(|s| norm_flag(&s.name) == base) {
                     (s, &mut given_sandbox)
                 } else {
-                    let mut valid: Vec<String> = ["--confirm", "--plan", "--json", "--out", "--ro", "--deny-exec", "--secret-file", "--secret-stdin", "--no-sandbox", "--help"]
+                    let mut valid: Vec<String> = ["--confirm", "--plan", "--json", "--out", "--ro", "--deny-exec", "--secret-file", "--secret-stdin", "--sandbox", "--no-sandbox", "--help"]
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
@@ -578,15 +608,38 @@ fn cmd_run(args: &[String]) -> i32 {
             return EXIT_USAGE;
         }
     }
-    if flags.no_sandbox {
+    let mode = match (flags.sandbox, std::env::var("WEIR_SANDBOX").ok().filter(|v| !v.is_empty())) {
+        (Some(m), _) => m,
+        (None, Some(v)) => match SandboxMode::parse(&v) {
+            Some(m) => m,
+            None => return usage_err(format!("WEIR_SANDBOX must be required, auto or off, not `{v}`")),
+        },
+        (None, None) => SandboxMode::Required,
+    };
+    // `auto` decides now, before the interpreter takes namespaces it cannot leave.
+    let mut why_unconfined: Option<String> = None;
+    if mode == SandboxMode::Auto && entry.sandbox.is_some() && !flags.plan {
+        if let Err(e) = crate::sandbox::probe() {
+            why_unconfined = Some(e);
+        }
+    }
+    let no_sandbox = mode == SandboxMode::Off || why_unconfined.is_some();
+    if no_sandbox {
+        let how = match &why_unconfined {
+            Some(e) => format!("the sandbox could not be created ({e}); the sandbox mode is auto"),
+            None => "sandbox is off".to_string(),
+        };
         if let Some(e) = mounts.entries.iter().find(|e| e.host != e.inside && e.origin == "declared") {
             eprintln!(
-                "weir: --no-sandbox cannot be used here: the mount of {} at {} remaps a path, and without a sandbox every inside path is a host path",
+                "weir: cannot run without the sandbox ({how}): the mount of {} at {} remaps a path, and without a sandbox every inside path is a host path",
                 e.host, e.inside
             );
-            return EXIT_USAGE;
+            return if why_unconfined.is_some() { EXIT_CAPABILITY } else { EXIT_USAGE };
         }
-        eprintln!("weir: warning: running without the filesystem sandbox (--no-sandbox)");
+        match &why_unconfined {
+            Some(_) => eprintln!("weir: warning: running without the filesystem sandbox: {how}"),
+            None => eprintln!("weir: warning: running without the filesystem sandbox (--sandbox off)"),
+        }
     }
 
     // Flow inputs.
@@ -622,7 +675,7 @@ fn cmd_run(args: &[String]) -> i32 {
     }
 
     // Enter the sandbox (everything above needed host paths).
-    let sandboxed = if entry.sandbox.is_some() && !flags.no_sandbox && !flags.plan {
+    let sandboxed = if entry.sandbox.is_some() && !no_sandbox && !flags.plan {
         match crate::sandbox::enter(&mounts) {
             Ok(Some(code)) => return code, // the parent of the sandbox stage: child's exit status
             Ok(None) => {
@@ -630,7 +683,10 @@ fn cmd_run(args: &[String]) -> i32 {
                 true
             }
             Err(e) => {
-                eprintln!("weir: the sandbox could not be created: {e}\n(pass --no-sandbox only on hosts where a sandbox cannot be created)");
+                eprintln!(
+                    "weir: the sandbox could not be created: {e}\n\
+                     (if this host or container is already the isolation you want, set WEIR_SANDBOX=auto to fall back with a warning, or WEIR_SANDBOX=off)"
+                );
                 return EXIT_CAPABILITY;
             }
         }
@@ -647,7 +703,7 @@ fn cmd_run(args: &[String]) -> i32 {
     if flags.plan {
         println!("plan for flow `{}`; nothing is executed. Commands report empty results, so branches that depend on them may differ from a real run.", flow.name);
         println!("mounts:\n{}", mounts.describe().trim_end());
-        if entry.sandbox.is_some() && !flags.no_sandbox {
+        if entry.sandbox.is_some() && !no_sandbox {
             println!("(sandbox: would be entered for a real run)");
         }
     }
@@ -777,7 +833,7 @@ fn print_flow_help(file: &str, flow: &Flow, entry: &File) {
     for o in &flow.outs {
         println!("  {}: {}", o.name, o.ty.show());
     }
-    println!("\nrun options: --confirm --plan --json --out <name> --ro <path> --deny-exec <name> --no-sandbox");
+    println!("\nrun options: --confirm --plan --json --out <name> --ro <path> --deny-exec <name> --sandbox <mode>");
 }
 
 fn read_secret(name: &str, flags: &RunFlags) -> Result<Option<Value>, String> {

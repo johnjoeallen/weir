@@ -45,7 +45,29 @@ builds a tmpfs root from bind mounts, and calls `pivot_root`. This is not a
 Inside, a program sees only its mounts, a private `/tmp`, a minimal `/dev`, and
 its own `/proc`. A `ro` mount rejects writes. Other host directories next to a
 mounted one are invisible. `--ro` and `--deny-exec` narrow the sandbox for a single
-run, and `--no-sandbox` removes it (with a warning).
+run, and `--sandbox` chooses what happens when it can't be built, as described below.
+
+## When the sandbox cannot be created
+
+Some hosts forbid user namespaces: hardened kernels, and containers whose seccomp
+profile blocks `unshare` and `pivot_root`. The `--sandbox` option, or the
+`WEIR_SANDBOX` environment variable, says what to do then. The option wins over the variable.
+
+| Mode | A sandbox can be built | It cannot |
+|---|---|---|
+| `required` (the default) | the script runs inside it | return code 4, nothing is run |
+| `auto` | the script runs inside it | a warning naming the cause, then the script runs without it |
+| `off` | the script runs without it, with a warning | the same |
+
+`auto` is for a machine that is already isolated, such as a CI job in a container.
+Weir tries to build the sandbox in a short-lived child process before the script
+starts, so a script never begins inside a half-built one. The `--json` result says
+`"sandbox": false` whenever the script ran without one.
+
+Without a sandbox every path in the script is a host path, so a script with a
+mount that remaps a path (`mount logs at "/logs" ro`) can't run that way. That is
+return code 2 under `off`, and return code 4 when `auto` fell back because the
+sandbox could not be built. `--no-sandbox` is the same as `--sandbox off`.
 
 ## A smaller view for one program
 

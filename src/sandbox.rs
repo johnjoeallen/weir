@@ -13,10 +13,10 @@
 //!   linked, so the host libc must stay mapped (it is, since it is loaded before the pivot).
 
 #[cfg(target_os = "linux")]
-pub use linux::{enter, narrow};
+pub use linux::{enter, narrow, probe};
 
 #[cfg(not(target_os = "linux"))]
-pub use other::{enter, narrow};
+pub use other::{enter, narrow, probe};
 
 /// No sandbox exists off Linux (design section 19.4): the caller exits 4 unless `--no-sandbox`.
 #[cfg(not(target_os = "linux"))]
@@ -30,6 +30,10 @@ mod other {
     }
 
     pub fn narrow(_cmd: &mut Command, _sees: Vec<(String, Mode)>, _system: bool) {}
+
+    pub fn probe() -> Result<(), String> {
+        Err("the filesystem sandbox needs Linux namespaces and is not available on this platform".into())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -75,6 +79,10 @@ mod linux {
         fn getuid() -> u32;
         fn getgid() -> u32;
         fn getpid() -> c_int;
+        fn pipe(fds: *mut c_int) -> c_int;
+        fn read(fd: c_int, buf: *mut c_void, n: usize) -> isize;
+        fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
+        fn close(fd: c_int) -> c_int;
         fn chdir(path: *const c_char) -> c_int;
         fn kill(pid: c_int, sig: c_int) -> c_int;
         fn signal(sig: c_int, handler: usize) -> usize;
@@ -427,6 +435,99 @@ mod linux {
                 unsafe { _exit(4) }
             }
             Ok(None)
+        }
+    }
+
+    /// Report a probe failure to the parent through `fd` and leave.
+    fn probe_fail(fd: c_int, msg: &str) -> ! {
+        unsafe {
+            write(fd, msg.as_ptr() as *const c_void, msg.len());
+            _exit(1)
+        }
+    }
+
+    /// Find out whether `enter` would succeed here, without changing this process: a forked child
+    /// builds and pivots into an empty root the way `enter` does and exits. Used by `--sandbox auto`,
+    /// which must decide before the interpreter takes a PID namespace it cannot leave.
+    pub fn probe() -> Result<(), String> {
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            return Err("the sandbox is not implemented for this CPU architecture".into());
+        }
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        {
+            let (uid, gid) = unsafe { (getuid(), getgid()) };
+            let root = std::env::temp_dir().join(format!("weir-probe-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
+            let root_s = root.to_string_lossy().into_owned();
+            let mut fds = [0 as c_int; 2];
+            if unsafe { pipe(fds.as_mut_ptr()) } != 0 {
+                let _ = std::fs::remove_dir_all(&root);
+                return Err(format!("pipe: {}", io::Error::last_os_error()));
+            }
+            use std::io::Write as _;
+            let _ = std::io::stdout().flush();
+            let _ = std::io::stderr().flush();
+            let pid = unsafe { fork() };
+            if pid < 0 {
+                let _ = std::fs::remove_dir_all(&root);
+                return Err(format!("fork: {}", io::Error::last_os_error()));
+            }
+            if pid == 0 {
+                let w = fds[1];
+                unsafe { close(fds[0]) };
+                if unsafe { unshare(CLONE_NEWUSER | CLONE_NEWPID) } != 0 {
+                    probe_fail(w, &format!("unshare: {}", why_unshare_failed(&io::Error::last_os_error())));
+                }
+                let maps = (|| -> Result<(), String> {
+                    std::fs::write("/proc/self/setgroups", "deny").map_err(|e| format!("setgroups: {e}"))?;
+                    std::fs::write("/proc/self/uid_map", format!("{uid} {uid} 1")).map_err(|e| format!("writing uid_map: {e}"))?;
+                    std::fs::write("/proc/self/gid_map", format!("{gid} {gid} 1")).map_err(|e| format!("writing gid_map: {e}"))?;
+                    Ok(())
+                })();
+                if let Err(e) = maps {
+                    probe_fail(w, &e);
+                }
+                let init = unsafe { fork() };
+                if init < 0 {
+                    probe_fail(w, &format!("fork: {}", io::Error::last_os_error()));
+                }
+                if init > 0 {
+                    let mut status: c_int = 0;
+                    unsafe { waitpid(init, &mut status, 0) };
+                    unsafe { _exit(if status == 0 { 0 } else { 1 }) }
+                }
+                if unsafe { unshare(CLONE_NEWNS) } != 0 {
+                    probe_fail(w, &format!("unshare mount namespace: {}", io::Error::last_os_error()));
+                }
+                if let Err(e) = build_and_enter(&root_s, &[], true) {
+                    probe_fail(w, &e);
+                }
+                unsafe { _exit(0) }
+            }
+            unsafe { close(fds[1]) };
+            let mut msg: Vec<u8> = Vec::new();
+            let mut buf = [0u8; 512];
+            loop {
+                let n = unsafe { read(fds[0], buf.as_mut_ptr() as *mut c_void, buf.len()) };
+                if n > 0 {
+                    msg.extend_from_slice(&buf[..n as usize]);
+                } else if n == 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+                    break;
+                }
+            }
+            unsafe { close(fds[0]) };
+            let mut status: c_int = 0;
+            unsafe { waitpid(pid, &mut status, 0) };
+            let _ = std::fs::remove_dir_all(&root);
+            if status == 0 && msg.is_empty() {
+                Ok(())
+            } else if msg.is_empty() {
+                Err("the test sandbox exited without a message".into())
+            } else {
+                Err(String::from_utf8_lossy(&msg).into_owned())
+            }
         }
     }
 
