@@ -22,6 +22,16 @@ The tag, the version in `Cargo.toml` and `weir --version` should all agree.
 
 The package is created under `target/debian/*.deb`.
 
+## Release workflow
+
+Pushing a tag that starts with `v` runs `.github/workflows/release.yml`. It checks that the tag
+matches `version` in `Cargo.toml`, runs the tests, builds the package with `cargo deb`, and attaches
+the `.deb` and a `SHA256SUMS` file to a GitHub release for that tag. It can also be started by hand,
+which builds the package and keeps it as a workflow artifact without publishing a release.
+
+The package is built on `ubuntu-latest`, so it depends on that image's glibc (currently
+`libc6 >= 2.39`) and won't install on older distributions.
+
 ## Install
 
 ```bash
