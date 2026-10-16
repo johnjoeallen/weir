@@ -1,0 +1,3134 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A small interpreted language for scripts that glue programs together, checked before they run.">
+      
+      
+      
+        <link rel="canonical" href="https://johnjoeallen.github.io/weir/0.6/DESIGN/">
+      
+      
+        <link rel="prev" href="../examples/">
+      
+      
+        <link rel="next" href="../IMPLEMENTATION/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Design - Weir</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#weir-design-document" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Weir" class="md-header__button md-logo" aria-label="Weir" data-md-component="logo">
+      
+  <img src="../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Weir
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Design
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/johnjoeallen/weir" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    johnjoeallen/weir
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Weir" class="md-nav__button md-logo" aria-label="Weir" data-md-component="logo">
+      
+  <img src="../assets/logo.svg" alt="logo">
+
+    </a>
+    Weir
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/johnjoeallen/weir" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    johnjoeallen/weir
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running programs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sandbox/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The sandbox
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../secrets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Secrets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using Weir in CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#introduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Introduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-execution-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Execution Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Execution Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-subcommands-that-matter-for-the-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Subcommands that matter for the model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Exit codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-declarations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Declarations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Declarations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 tool
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-fn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 fn
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-why-only-four" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Why only four
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-flow-anatomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Flow Anatomy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Flow Anatomy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-header-clauses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Header clauses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-loops-and-repeated-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Loops and repeated steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-types-and-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Types and Values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-commands-and-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Commands and Errors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Commands and Errors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-argument-lists-not-strings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Argument lists, not strings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 fail
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Capabilities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-the-script-defines-the-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 The script defines the sandbox
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7.1 The script defines the sandbox">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#711-explicit-mounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1.1 Explicit mounts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#711-what-the-sandbox-does-not-cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1.1 What the sandbox does not cover
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-executable-capabilities-are-inferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Executable capabilities are inferred
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-tools-narrow-the-view-components-cannot-widen-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Tools narrow the view; components cannot widen it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#731-scoped-within-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3.1 Scoped within blocks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-destructive-built-ins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Destructive built-ins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-not-covered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 Not covered
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#76-mechanism-and-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.6 Mechanism and availability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-calls-and-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Calls and Naming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-native-stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Native stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-failure-and-early-termination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Failure and early termination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-binding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 Binding
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-lockfile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Lockfile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-manifests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 Manifests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-cli-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. CLI Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. CLI Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#111-generated-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1 Generated flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1111-run-time-control-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1.1 Run-time control flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#112-input-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.2 Input flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#113-output-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.3 Output channels
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-worked-example-log-analysis-and-config-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Worked Example: Log Analysis and Config Change
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-worked-example-certificate-expiry-checker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Worked Example: Certificate Expiry Checker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-grammar-sketch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Grammar Sketch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-reserved-words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Reserved Words
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-comparison-to-other-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. Comparison to Other Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#18-implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18. Implementation Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#19-open-questions-and-known-weaknesses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19. Open Questions and Known Weaknesses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="19. Open Questions and Known Weaknesses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#191-no-training-data-so-error-messages-are-the-product" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.1 No training data, so error messages are the product
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#192-language-surface-versus-simpler-than-bash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.2 Language surface versus "simpler than bash"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#193-things-added-beyond-the-original-brief" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.3 Things added beyond the original brief
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#194-deferred-past-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.4 Deferred past v1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#195-weaknesses-in-the-design-as-it-stands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.5 Weaknesses in the design as it stands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#196-checker-rules-that-are-expensive-to-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.6 Checker rules that are expensive to implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#197-questions-not-yet-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.7 Questions not yet decided
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../IMPLEMENTATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#introduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Introduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-execution-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Execution Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Execution Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-subcommands-that-matter-for-the-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Subcommands that matter for the model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Exit codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-declarations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Declarations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Declarations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 tool
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-fn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 fn
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-why-only-four" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Why only four
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-flow-anatomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Flow Anatomy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Flow Anatomy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-header-clauses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Header clauses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-loops-and-repeated-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Loops and repeated steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-types-and-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Types and Values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-commands-and-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Commands and Errors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Commands and Errors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-argument-lists-not-strings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Argument lists, not strings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 fail
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Capabilities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-the-script-defines-the-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 The script defines the sandbox
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7.1 The script defines the sandbox">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#711-explicit-mounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1.1 Explicit mounts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#711-what-the-sandbox-does-not-cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1.1 What the sandbox does not cover
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-executable-capabilities-are-inferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Executable capabilities are inferred
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-tools-narrow-the-view-components-cannot-widen-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Tools narrow the view; components cannot widen it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#731-scoped-within-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3.1 Scoped within blocks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-destructive-built-ins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Destructive built-ins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-not-covered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 Not covered
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#76-mechanism-and-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.6 Mechanism and availability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-calls-and-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Calls and Naming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-native-stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Native stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-failure-and-early-termination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Failure and early termination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-binding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 Binding
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-lockfile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Lockfile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-manifests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 Manifests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-cli-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. CLI Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. CLI Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#111-generated-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1 Generated flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1111-run-time-control-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1.1 Run-time control flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#112-input-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.2 Input flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#113-output-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.3 Output channels
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-worked-example-log-analysis-and-config-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Worked Example: Log Analysis and Config Change
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-worked-example-certificate-expiry-checker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Worked Example: Certificate Expiry Checker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-grammar-sketch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Grammar Sketch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-reserved-words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Reserved Words
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-comparison-to-other-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. Comparison to Other Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#18-implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18. Implementation Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#19-open-questions-and-known-weaknesses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19. Open Questions and Known Weaknesses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="19. Open Questions and Known Weaknesses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#191-no-training-data-so-error-messages-are-the-product" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.1 No training data, so error messages are the product
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#192-language-surface-versus-simpler-than-bash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.2 Language surface versus "simpler than bash"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#193-things-added-beyond-the-original-brief" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.3 Things added beyond the original brief
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#194-deferred-past-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.4 Deferred past v1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#195-weaknesses-in-the-design-as-it-stands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.5 Weaknesses in the design as it stands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#196-checker-rules-that-are-expensive-to-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.6 Checker rules that are expensive to implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#197-questions-not-yet-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.7 Questions not yet decided
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/johnjoeallen/weir/edit/main/docs/DESIGN.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="weir-design-document">Weir: Design Document<a class="headerlink" href="#weir-design-document" title="Permanent link">&para;</a></h1>
+<p><strong>Status: early design, with a reference interpreter.</strong> The language, its syntax and its tooling are all subject to change, and several sections end in open questions. This document is the specification. <a href="../IMPLEMENTATION/">IMPLEMENTATION.md</a> records what the interpreter in <code>src/</code> implements, what it does not, and the decisions made where this document was silent.</p>
+<h2 id="introduction">Introduction<a class="headerlink" href="#introduction" title="Permanent link">&para;</a></h2>
+<p>Scripts that glue programs together are still mostly written in bash. Bash is everywhere, but both people and AI models make the same predictable mistakes in it: unquoted expansions, word splitting, <code>rm -rf "$DIR/"</code> with an empty <code>$DIR</code>, forgotten <code>set -e</code>, pipelines that hide failures, secrets on the command line, and scripts that prompt and hang under cron. Almost all of these are detectable by static analysis, but bash's grammar makes that analysis unreliable, and the mistakes are legal programs.</p>
+<p>CI workflow files (GitHub Actions and similar) have a better structure: typed inputs, named steps, declared outputs. They then wrap that structure around YAML and shell strings, which loses the safety the structure could have provided.</p>
+<p>Weir is an interpreted language for scripts that takes the structural shape of a workflow file and makes it the language itself. It targets anything otherwise written in bash and run from a terminal, a cron job, a systemd unit or a CI pipeline. CI is one use case, not the model. Its design goal is that the mistakes above cannot be expressed, or are rejected by <code>weir check</code> before anything runs, with an error message precise enough for a person or a model to fix without guessing.</p>
+<p>Non-goals: Weir is not a general-purpose language, not an interactive shell, and not a build system. It does not try to be fast at computation.</p>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#1-design-principles">Design Principles</a></li>
+<li><a href="#2-execution-model">Execution Model</a></li>
+<li><a href="#3-declarations">Declarations</a></li>
+<li><a href="#4-flow-anatomy">Flow Anatomy</a></li>
+<li><a href="#5-types-and-values">Types and Values</a></li>
+<li><a href="#6-commands-and-errors">Commands and Errors</a></li>
+<li><a href="#7-capabilities">Capabilities and the Filesystem Sandbox</a></li>
+<li><a href="#8-calls-and-naming">Calls and Naming</a></li>
+<li><a href="#9-pipelines">Pipelines</a></li>
+<li><a href="#10-components">Components</a></li>
+<li><a href="#11-cli-surface">CLI Surface</a></li>
+<li><a href="#12-testing">Testing</a></li>
+<li><a href="#13-worked-example-log-analysis-and-config-change">Worked Example: Log Analysis and Config Change</a></li>
+<li><a href="#14-worked-example-certificate-expiry-checker">Worked Example: Certificate Expiry Checker</a></li>
+<li><a href="#15-grammar-sketch">Grammar Sketch</a></li>
+<li><a href="#16-reserved-words">Reserved Words</a></li>
+<li><a href="#17-comparison-to-other-tools">Comparison to Other Tools</a></li>
+<li><a href="#18-implementation-notes">Implementation Notes</a></li>
+<li><a href="#19-open-questions-and-known-weaknesses">Open Questions and Known Weaknesses</a></li>
+</ol>
+<h2 id="1-design-principles">1. Design Principles<a class="headerlink" href="#1-design-principles" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>The author's source is what runs.</strong> No compile step, no generated intermediate script. Every error refers to text the author wrote.</li>
+<li><strong>Make the common mistake unrepresentable first, detectable second, and a runtime failure third.</strong> Each rule in this document is tagged by which of the three it relies on where that matters.</li>
+<li><strong>Failure is loud by default.</strong> Tolerating failure is an explicit act.</li>
+<li><strong>Nothing prompts unless asked.</strong> A script that works at a terminal must behave identically under cron.</li>
+<li><strong>Effects are declared, and enforced.</strong> The top of the entry file defines the filesystem the script runs in: which host folders are visible, where, and in which mode. The interpreter and every program it starts live inside that sandbox, so what a script can touch can be read from one place. Which programs it may start is inferred. The network is not covered.</li>
+<li><strong>Error messages are the product.</strong> See <a href="#19-open-questions-and-known-weaknesses">section 19</a>.</li>
+</ol>
+<h2 id="2-execution-model">2. Execution Model<a class="headerlink" href="#2-execution-model" title="Permanent link">&para;</a></h2>
+<p>Weir is a single interpreter binary. <code>weir run file.weir</code> parses and interprets the file directly. There is no ahead-of-time compile step and no generated code in any other language. This is a deliberate rejection of the "transpile to bash" approach: a transpiled script produces errors that refer to generated lines the author never wrote, and it inherits bash's quoting hazards at the output layer.</p>
+<h3 id="21-subcommands-that-matter-for-the-model">2.1 Subcommands that matter for the model<a class="headerlink" href="#21-subcommands-that-matter-for-the-model" title="Permanent link">&para;</a></h3>
+<p><strong><code>weir check &lt;file&gt;</code></strong> is a static pass. It parses, resolves names, type-checks, infers the executable set, checks it against the declared sandbox, and runs lint rules. It never runs a command or reads the filesystem beyond the source files and the lockfile. Each finding has:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file</code></td>
+<td>path of the source file</td>
+</tr>
+<tr>
+<td><code>line</code></td>
+<td>1-based line</td>
+</tr>
+<tr>
+<td><code>col</code></td>
+<td>1-based column</td>
+</tr>
+<tr>
+<td><code>code</code></td>
+<td>stable identifier such as <code>W-DEFAULT-ARG</code></td>
+</tr>
+<tr>
+<td><code>msg</code></td>
+<td>one-sentence description</td>
+</tr>
+<tr>
+<td><code>fix</code></td>
+<td>a concrete suggestion, when one exists</td>
+</tr>
+</tbody>
+</table>
+<p>Text mode prints <code>file:line:col: code: message</code> followed by the fix hint. <code>--json</code> prints an array of those objects. Codes are stable across releases; messages are not.</p>
+<p><strong><code>weir run --plan &lt;file&gt; [flow] [flags]</code></strong> prints every command, file write and file delete that would occur, and executes nothing. See <a href="#19-open-questions-and-known-weaknesses">section 19</a> for the limit on what a plan can know.</p>
+<h3 id="22-exit-codes">2.2 Exit codes<a class="headerlink" href="#22-exit-codes" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>success</td>
+</tr>
+<tr>
+<td>1</td>
+<td>flow failure (a step failed, an uncaught error, <code>fail</code>)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>usage error (bad flag, missing input, wrong type on the command line)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>check error (<code>weir check</code> found errors, or <code>run</code> refused to start)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>capability denied (the sandbox cannot be created, or a tool's <code>see</code> clause asks for more than the sandbox provides)</td>
+</tr>
+</tbody>
+</table>
+<p><code>weir run</code> always performs the check pass first. Check errors exit 3 and nothing runs. Warnings do not block a run.</p>
+<p>Rationale for distinguishing 2, 3 and 4: callers such as cron wrappers and CI need to tell "the script ran and failed" from "the script was invoked wrongly" from "the script is broken" from "the script tried to exceed its grant". Collapsing these into 1 is what bash does, and it forces log scraping.</p>
+<h2 id="3-declarations">3. Declarations<a class="headerlink" href="#3-declarations" title="Permanent link">&para;</a></h2>
+<p>There are four declarations, and only four. A file contains <code>use</code> imports and any number of these.</p>
+<h3 id="31-flow">3.1 <code>flow</code><a class="headerlink" href="#31-flow" title="Permanent link">&para;</a></h3>
+<p>A named, typed unit of work. A file's entry point is marked <code>main</code>. A file containing a single flow needs no marker. <code>private</code> flows are callable only from within their own file, never from the CLI or another file.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>main flow rotate {
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  in dir: path
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  // ...
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>}
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>private flow prune_old {
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  in dir: path
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  // ...
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>}
+</code></pre></div>
+<h3 id="32-tool">3.2 <code>tool</code><a class="headerlink" href="#32-tool" title="Permanent link">&para;</a></h3>
+<p>A typed wrapper around exactly one external program. It declares the program, its parameters, how it consumes input (<code>takes</code>), what it produces (<code>yields</code>), and which exit codes mean success (<code>ok_codes</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tool journalctl {
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  program "journalctl"
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  in unit: string
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  in since: string = "24 hours ago"
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  args ["--no-pager", "-u", unit, "--since", since]
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  takes none
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  yields lines
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  ok_codes [0]
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>}
+</code></pre></div>
+<p><code>takes</code> and <code>yields</code> are each one of <code>none</code>, <code>lines</code>, <code>text</code>, <code>json</code>. <code>takes none</code> means the program's stdin is closed (<code>/dev/null</code>). <code>ok_codes</code> defaults to <code>[0]</code>.</p>
+<p>The <code>program</code> is a string literal. It must be literal so the checker can infer executable capabilities (<a href="#7-capabilities">section 7</a>).</p>
+<h3 id="33-fn">3.3 <code>fn</code><a class="headerlink" href="#33-fn" title="Permanent link">&para;</a></h3>
+<p>Pure computation. A <code>fn</code> cannot run commands, access files or the network, read the clock, or call a non-pure flow. The checker enforces this by restricting a <code>fn</code> body to other <code>fn</code>s and pure built-ins.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>fn ip_of(line: string) -&gt; string {
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  return first(of: split(text: line, on: " "))
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>}
+</code></pre></div>
+<h3 id="34-test">3.4 <code>test</code><a class="headerlink" href="#34-test" title="Permanent link">&para;</a></h3>
+<p>Runs under <code>weir test</code> against fixtures. See <a href="#12-testing">section 12</a>.</p>
+<h3 id="35-why-only-four">3.5 Why only four<a class="headerlink" href="#35-why-only-four" title="Permanent link">&para;</a></h3>
+<p>Every additional declaration kind (type definitions, aliases, macros, classes) widens the surface a model or a person has to hold in mind, and each pulls toward a general-purpose language. Reusable data shapes are handled by structural record types written inline (<a href="#5-types-and-values">section 5</a>). That is itself a concession and is listed as an open question.</p>
+<p><strong>Alternative rejected: a single <code>fn</code> kind that may or may not be pure.</strong> The purity split is what lets the checker promise that a <code>fn</code> call in a <code>--plan</code> run can be evaluated safely, and lets tests call a <code>fn</code> without fixtures.</p>
+<p><strong>Alternative rejected: wrapping programs ad hoc with <code>run</code> only.</strong> <code>run</code> still exists, but a <code>tool</code> gives the checker a declared stdin/stdout shape and exit-code contract, which is what pipeline typing depends on.</p>
+<h2 id="4-flow-anatomy">4. Flow Anatomy<a class="headerlink" href="#4-flow-anatomy" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>main flow example {
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  in    name: string                 // required input
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  in    count: int = 3               // optional, with default
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  in    note: string?                // optional, absent if not given
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>  in    token: secret                // credential, never accepted on argv
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>  out   report: path
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  requires exists(path: "/etc/example")
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>  lock "/run/lock/example.lock"     // an inside path; must be under a rw mount
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>  prepare {                          // inline step
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    // ...
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>  }
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>  other_flow(x: 1)                   // calling a flow is a step
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>  finally {
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    // always runs
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>  }
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>}
+</code></pre></div>
+<h3 id="41-header-clauses">4.1 Header clauses<a class="headerlink" href="#41-header-clauses" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>in</code></strong>: typed input. <code>= default</code> makes it optional. <code>T?</code> makes it optional with no default; if absent it is unwrapped with <code>if let</code>. <code>secret</code> marks a credential.</li>
+<li><strong><code>out</code></strong>: typed output. Assigned with <code>set name = expr</code> anywhere in the flow. Outputs assigned before a failure are still reported (<a href="#113-output-channels">section 11.3</a>).</li>
+<li><strong><code>requires</code></strong>: preconditions, evaluated before any step runs. A failing precondition fails the flow with exit 1 and the expression text in the message. Preconditions must be pure or read-only built-ins such as <code>exists</code>.</li>
+<li><strong><code>lock</code></strong>: acquire an exclusive advisory lock on the given path for the flow's duration. The path is an inside path and must lie under a <code>rw</code> mount, or the lock would exclude nothing (<a href="#71-the-script-defines-the-sandbox">section 7.1</a>). If it is already held, the flow fails immediately rather than waiting. A held lock is a signal, not a queue, and waiting is how cron jobs pile up.</li>
+<li><strong><code>finally</code></strong>: a block that runs whether or not the body succeeded. A failure inside <code>finally</code> is reported but does not mask the original failure.</li>
+</ul>
+<h3 id="42-steps">4.2 Steps<a class="headerlink" href="#42-steps" title="Permanent link">&para;</a></h3>
+<p>There is no <code>step</code> or <code>call</code> keyword. Two forms are steps:</p>
+<ol>
+<li>A flow call: <code>fetch(url: u, dest: d)</code>.</li>
+<li>An inline named block: <code>name { ... }</code>.</li>
+</ol>
+<p>Steps have stable identity used by <code>--plan</code>, logs, <code>when</code>, and <code>--json</code> output. Names must be unique within a flow.</p>
+<p><strong>Step modifiers</strong> follow the step:</p>
+<ul>
+<li><strong><code>when &lt;expr&gt;</code></strong>: guard. The step is skipped (and reported as skipped) if false.</li>
+<li><strong><code>confirmable</code></strong>: a marker that only takes effect when the caller passes <code>--confirm</code>. Without <code>--confirm</code>, the step is skipped and reported as <code>skipped: unconfirmed</code>. The interpreter never prompts. With <code>--confirm</code>, the step runs normally.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>reload_nginx {
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  systemctl(action: "reload", unit: "nginx")
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>} confirmable
+</code></pre></div>
+<p><strong>Alternative rejected: interactive y/n prompts.</strong> A prompt under cron or a systemd unit blocks forever or reads garbage from a closed stdin. Making confirmation a pre-declared flag keeps every run non-interactive and makes it auditable in a crontab line.</p>
+<p><strong>Alternative rejected: <code>--yes</code> that auto-answers all prompts.</strong> It implies prompts exist, which brings back the hang problem for anyone who forgets the flag.</p>
+<h3 id="43-loops-and-repeated-steps">4.3 Loops and repeated steps<a class="headerlink" href="#43-loops-and-repeated-steps" title="Permanent link">&para;</a></h3>
+<p>A step inside a loop would otherwise have the same name each iteration. Steps that repeat must carry an explicit <code>as</code> label giving each iteration a stable identity; the loop adds the iteration index automatically.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>for host in hosts {
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  probe as host {
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    // identity: probe[&lt;index&gt;] "&lt;host&gt;"
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  }
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>}
+</code></pre></div>
+<p>The checker errors on a repeated step with no <code>as</code> label, since without it the plan, the log, and the JSON output cannot say which iteration failed.</p>
+<h2 id="5-types-and-values">5. Types and Values<a class="headerlink" href="#5-types-and-values" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>string</code></td>
+<td>UTF-8 text. Interpolation with <code>"${expr}"</code>.</td>
+</tr>
+<tr>
+<td><code>int</code></td>
+<td>64-bit signed.</td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>Distinct from <code>string</code>. <code>/</code> joins paths: <code>dir / "x.log"</code>.</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>Literals <code>30s</code>, <code>15m</code>, <code>2h</code>, <code>21d</code>. Comparable and addable.</td>
+</tr>
+<tr>
+<td><code>list&lt;T&gt;</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>map&lt;K,V&gt;</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>secret</code></td>
+<td>Opaque. See below.</td>
+</tr>
+<tr>
+<td>enums</td>
+<td>Declared inline in an <code>in</code>: <code>in mode: enum(fast, safe)</code>.</td>
+</tr>
+<tr>
+<td><code>T?</code></td>
+<td>Optional. There is no null. Unwrapped with <code>if let v = x {}</code>.</td>
+</tr>
+<tr>
+<td>records</td>
+<td>Structural: <code>{host: string, days: int}</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><code>path</code> is distinct from <code>string</code> because command-line path inputs are translated through the sandbox's mount table (<a href="#71-the-script-defines-the-sandbox">section 7.1</a>) and the built-in <code>delete</code>/<code>move</code> need to know which values are filesystem locations. A <code>string</code> is never implicitly converted to a <code>path</code>; use <code>path(text: s)</code>.</p>
+<p><strong><code>secret</code>.</strong> A <code>secret</code> cannot be printed, interpolated into a string, placed in a command's argument list, or written to a file by the checker's rules. It can only reach a program through a tool's environment (<code>env { NAME = token }</code>) or its stdin. It is redacted in logs and plan output. It cannot be accepted on argv (<a href="#112-input-flags">section 11.2</a>).</p>
+<p><strong>Mutability.</strong> <code>let</code> bindings are immutable. <code>var</code> is explicit and local. There is no mutable module-level state; a file's top level contains declarations only. This removes the class of bugs where a function's behaviour depends on what some other function did to a global.</p>
+<p><strong>No null.</strong> Absence is <code>T?</code>. The literal for "no value" is <code>absent</code>. The checker requires unwrapping before use, so "forgot to handle the missing case" is a check error, not a runtime crash.</p>
+<p><strong>Alternative rejected: a dynamic "everything is a string" model as in bash.</strong> It is the source of the quoting problem. Weir pays the cost of conversions being explicit (<code>int(text: s)</code>).</p>
+<h2 id="6-commands-and-errors">6. Commands and Errors<a class="headerlink" href="#6-commands-and-errors" title="Permanent link">&para;</a></h2>
+<h3 id="61-argument-lists-not-strings">6.1 Argument lists, not strings<a class="headerlink" href="#61-argument-lists-not-strings" title="Permanent link">&para;</a></h3>
+<p>A command is invoked with an argument list. There is no shell involved. Quoting and injection bugs cannot be expressed, because no string is ever re-parsed.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>run(cmd: "tar", args: ["-czf", archive, ...$files])
+</code></pre></div>
+<p><code>...$list</code> spreads a list into the argument list. A tool invocation is the same mechanism with the argument template declared once.</p>
+<p><strong>Alternative rejected: allowing <code>run(cmd: "tar -czf $a $b")</code>.</strong> Convenient, and exactly the bug generator this language exists to remove. There is no escape hatch to a shell string in v1. If a user needs a shell, <code>run(cmd: "bash", args: ["-c", script])</code> is available and visibly marks the boundary; the checker warns on it (<code>W-SHELL-STRING</code>).</p>
+<h3 id="62-failure">6.2 Failure<a class="headerlink" href="#62-failure" title="Permanent link">&para;</a></h3>
+<p>A command exiting with a code outside its <code>ok_codes</code> (default <code>[0]</code>) throws <code>ExecError</code>. This is the default for every command, with no <code>set -e</code> equivalent to forget.</p>
+<p><code>try</code> opts into tolerance and yields an attempt record:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>let attempt = try run(cmd: "grep", args: ["-q", pattern, file])
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>if attempt.ok { ... }
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>// attempt.ok: bool, attempt.code: int, attempt.value: T? (stdout, per yields)
+</code></pre></div>
+<p>Errors are typed and caught by type:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>try {
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  deploy(version: v)
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>} catch e: ExecError {
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  print(text: "deploy failed: ${e.message}")
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  fail message: "deploy failed"
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>} catch e: CapabilityError {
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>  fail message: e.message
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>}
+</code></pre></div>
+<p>Built-in error types: <code>ExecError</code>, <code>CapabilityError</code>, <code>IoError</code>, <code>ParseError</code>, <code>Timeout</code>. The checker warns on <code>catch</code> clauses that cannot match anything the body can throw, so a typo in an error type is not silent.</p>
+<h3 id="63-fail">6.3 <code>fail</code><a class="headerlink" href="#63-fail" title="Permanent link">&para;</a></h3>
+<p><code>fail message: "..."</code> ends the flow with exit code 1. <code>finally</code> still runs.</p>
+<h2 id="7-capabilities">7. Capabilities<a class="headerlink" href="#7-capabilities" title="Permanent link">&para;</a></h2>
+<p><strong>What this section guarantees.</strong> A script defines, at the top of its entry file, the filesystem it runs in: a sandbox made of named host folders mounted at chosen paths with a mode each. The interpreter enters that sandbox before it runs any flow. From then on every path in the script, whether it goes to a built-in or to an external program, is a path inside the sandbox, and anything not mounted does not exist. Built-ins and external programs therefore see the same filesystem, and the guarantee needs no per-operation scope checks. "Sandbox" here means the filesystem only: the keyword does not imply any isolation of the network, the clock or other kernel resources. The guarantee covers the filesystem only; network access, and anything reachable through a mount the script granted, are outside it (<a href="#75-not-covered">section 7.5</a>).</p>
+<h3 id="71-the-script-defines-the-sandbox">7.1 The script defines the sandbox<a class="headerlink" href="#71-the-script-defines-the-sandbox" title="Permanent link">&para;</a></h3>
+<p>The entry file (the one named on the <code>weir run</code> command line) has at most one file-level <code>sandbox</code> block, placed after its <code>use</code> lines and before its declarations.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sandbox {
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>  in logs: path = "/var/log/nginx"     // host path, can be overridden with --logs
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>  mount system                         // the read-only system set, at the same paths
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>  mount logs at "/logs" ro             // host folder `logs`, visible as /logs, read-only
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  mount "/etc/nginx" ro                // same path inside and out
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  mount "/etc/nginx/conf.d" rw         // a more specific mount overrides a broader one
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  mount "/run/lock" rw
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>}
+</code></pre></div>
+<p><strong>The host's root cannot be mounted.</strong> A mount whose host side is <code>/</code> would put the whole machine inside the sandbox, and a sandbox that holds everything is no sandbox (it would also contain itself: <code>mount "/" at "/host"</code> shows <code>/host/host/host/...</code>). <code>weir check</code> reports it as <code>E-MOUNT-ROOT</code>, however the path is written (<code>"/"</code>, <code>"/var/.."</code>), and <code>weir run</code> refuses a sandbox input that resolves to <code>/</code> with return code 2. There is no option to allow it. A script that really needs the whole machine runs without the sandbox (<code>--sandbox off</code>, <a href="#76-mechanism-and-availability">section 7.6</a>).</p>
+<p><strong>A sandbox input is also an input of the flow.</strong> Every <code>in</code> in the <code>sandbox</code> block must be declared again, with the same name and type and no default, in each flow that can be run (not <code>private</code>); otherwise the checker reports <code>E-SANDBOX-IN-NOT-IN-FLOW</code>, <code>E-SANDBOX-IN-TYPE-MISMATCH</code> or <code>E-SANDBOX-IN-DEFAULT</code>. The sandbox block holds the host path and its default. The flow receives the same path as it appears inside the sandbox, translated through the mounts, so <code>--logs /var/log/nginx</code> gives the flow <code>/logs</code>. It is one command-line option, listed once in <code>--help</code>.</p>
+<p><strong>Mount forms.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Form</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mount &lt;host&gt; at &lt;inside&gt; ro\|rw</code></td>
+<td>bind-mount the host folder or file at <code>&lt;inside&gt;</code> in the sandbox</td>
+</tr>
+<tr>
+<td><code>mount &lt;path&gt; ro\|rw</code></td>
+<td>shorthand for <code>mount &lt;path&gt; at &lt;path&gt; ...</code>, the same path inside and out</td>
+</tr>
+<tr>
+<td><code>mount &lt;host&gt; [at &lt;inside&gt;] ro\|rw explicit</code></td>
+<td>the same, but kept out of the default view: only a <code>see</code> line or a <code>within</code> header that names it reaches it (<a href="#711-explicit-mounts">section 7.1.1</a>)</td>
+</tr>
+<tr>
+<td><code>mount system</code></td>
+<td>the read-only <strong>system set</strong>, each at its own path: <code>/usr</code>, <code>/lib</code>, <code>/lib64</code>, <code>/bin</code>, <code>/sbin</code>, and the files <code>/etc/ssl</code>, <code>/etc/resolv.conf</code>, <code>/etc/hosts</code>, <code>/etc/nsswitch.conf</code>, <code>/etc/localtime</code></td>
+</tr>
+</tbody>
+</table>
+<p>All mounts are <code>nosuid</code> and <code>nodev</code>. A mount is a folder or a single file. Where mounts overlap, the more specific <code>&lt;inside&gt;</code> path wins. <code>mount system</code> is never implied.</p>
+<h4 id="711-explicit-mounts">7.1.1 Explicit mounts<a class="headerlink" href="#711-explicit-mounts" title="Permanent link">&para;</a></h4>
+<p>A mount marked <code>explicit</code> is part of the sandbox but not of its default view. The script's built-ins, a generic <code>run</code>, a tool with no <code>see</code> lines and a <code>within</code> block that does not name it cannot reach it. A program sees it only if its tool has a <code>see</code> line for it, or it runs inside a <code>within</code> block whose header names it. The mount must still be declared in the <code>sandbox</code> block, so the script lists everything it can ever reach, and a reader finds the request next to the mount.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandbox {
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>  mount system
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  mount "/run/docker.sock" rw explicit   // the Docker daemon: root on the host
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>}
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>tool docker {
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>  program "docker"
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>  in subcommand: list&lt;string&gt;
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>  args [...$subcommand]
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>  see system
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>  see "/run/docker.sock" rw                 // the request
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>  takes none
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>  yields lines
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>}
+</code></pre></div>
+<ul>
+<li><strong>Specific requests only.</strong> The request must name the explicit mount or a path inside it. A <code>see</code> or <code>within</code> naming a parent folder (<code>/run</code>) does not include it.</li>
+<li><strong>Requests can only narrow.</strong> The mount is still capped by its declared mode, and a nested <code>within</code> can name an explicit mount only if the enclosing view already does.</li>
+<li><strong>Built-ins.</strong> Outside a requesting <code>within</code> block, <code>read_text</code> and the others fail with a <code>CapabilityError</code> that names the mount, and <code>exists</code> returns <code>false</code>.</li>
+<li><strong>Mechanism.</strong> The mount is bound under a holding folder in the sandbox root that no program's view includes. Once a script has an explicit mount, every program starts in its own narrowed root (about 0.6 ms each, <a href="#731-scoped-within-blocks">section 7.3.1</a>), cut down to the default view plus whatever it requests.</li>
+<li><strong>A broader mount can undo it.</strong> This applies to the mount path. If another mount exposes the same host folder (for example <code>mount "/run" rw</code> next to an explicit <code>/run/docker.sock</code>), that path is visible through the broader mount. The checker does not yet warn about this.</li>
+<li><strong>Without a sandbox</strong> (<code>--sandbox off</code>, or <code>auto</code> after a failure) no program is confined, so explicit mounts are enforced for built-ins only.</li>
+</ul>
+<p><strong>Host side and inside side.</strong> <code>&lt;host&gt;</code> is a path on the machine running Weir. <code>&lt;inside&gt;</code> is the path the script sees. Using different values makes a script portable across hosts: the script refers only to <code>/data</code>, and the operator decides which host folder that is. The sandbox block may declare <code>in</code> values of type <code>path</code> for the host side, like a flow's inputs. They produce flags (<code>--logs /srv/nginx-logs</code>) and <code>--help</code> entries and are evaluated before the sandbox is entered. They exist only for the sandbox block; flows cannot read them, because after the sandbox is entered the host path is not meaningful to the script.</p>
+<p><strong>What is inside.</strong> The sandbox root is an empty, read-only tmpfs holding the mount points, plus three fixed entries that are not declared: a private writable <code>/tmp</code>, a minimal <code>/dev</code> (<code>null</code>, <code>zero</code>, <code>urandom</code>, <code>tty</code>), and <code>/proc</code> for a new PID namespace. The working directory is <code>/tmp</code>. The environment is rebuilt rather than inherited: only <code>PATH</code>, <code>LANG</code>, <code>TZ</code>, <code>HOME</code> (set to <code>/tmp</code>) and what a tool declares in <code>env</code>.</p>
+<p><strong>Paths in the script are inside paths.</strong> A <code>path</code> literal, a <code>path</code> default and every path computed by <code>/</code> joining is a path in the sandbox. Built-ins such as <code>read_text</code>, <code>write</code> and <code>delete</code> operate on the sandbox. External programs started by <code>tool</code> and <code>run</code> run in the same sandbox and inherit its view, so <code>tail(file: log, n: 10)</code> passes the program the same path the script used.</p>
+<p><strong>Paths from the command line are host paths.</strong> An operator thinks in host paths, so a <code>path</code> input given as <code>--log /var/log/nginx/access.log</code> is a host path that Weir translates through the mount table to the inside path. A relative path is resolved against the host working directory first. If the path does not fall under any mount, the run fails with exit 2 and a message that lists the mounts. Defaults written in the script are inside paths. If two mounts expose the same host path, translation is ambiguous and <code>weir check</code> reports an error for the mounts it can compare statically; at run time the more specific inside path is used.</p>
+<p><strong>Entering the sandbox.</strong> <code>weir run</code> does its work in this order: parse and check the entry file, fetch and verify imported components against the lockfile, read any <code>--secrets-file</code> and <code>--secrets-stdin</code> inputs, evaluate the sandbox block and translate command-line paths, then enter the sandbox (<a href="#76-mechanism-and-availability">section 7.6</a>) and run the flow. Everything that needs host paths happens before the sandbox exists. After that point the interpreter itself cannot see the host outside the mounts.</p>
+<p><strong>Locks.</strong> <code>lock &lt;path&gt;</code> in a flow names an inside path. A lock file inside the private root, or inside <code>/tmp</code>, would exclude nothing, because each run has its own. The lock path must therefore lie under a <code>rw</code> mount (<code>mount "/run/lock" rw</code> in the example above), or <code>weir check</code> reports <code>E-SANDBOX-LOCK-UNSHARED</code>.</p>
+<p><strong>Why the sandbox is declared at the top and not per operation.</strong> One place shows everything the script can touch. Reading the top of the file answers "what can this do to my machine" without reading the flows, and a caller can restrict it further with <code>--ro</code> (<a href="#1111-run-time-control-flags">section 11.1.1</a>).</p>
+<h3 id="711-what-the-sandbox-does-not-cover">7.1.1 What the sandbox does not cover<a class="headerlink" href="#711-what-the-sandbox-does-not-cover" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Anything inside a mount.</strong> A <code>rw</code> mount lets built-ins and every program delete everything in it. The sandbox bounds where, not what. <code>run(cmd: "rm", args: ["-rf", dir])</code> is confined to the sandbox, but it is not subject to the refusals in <a href="#74-destructive-built-ins">section 7.4</a>. The checker warns when a literal <code>cmd</code> or <code>program</code> names a well-known destructive tool (<code>rm</code>, <code>mv</code>, <code>dd</code>, <code>chmod</code>, <code>chown</code>, <code>mkfs</code>, <code>shred</code>, <code>truncate</code>) and suggests the built-in (<code>W-DESTRUCTIVE-PROGRAM</code>), because the built-ins have more checks than the sandbox does.</li>
+<li><strong>Sockets and devices that were mounted.</strong> Mounting the D-Bus socket so that <code>systemctl</code> works gives every program that sees it whatever the daemon will do for that caller.</li>
+<li><strong>The network.</strong> See <a href="#75-not-covered">section 7.5</a>.</li>
+<li><strong>Flaws in the sandbox itself.</strong> It relies on kernel namespace and mount behaviour. It is a strong boundary against a script's mistakes and an ordinary misbehaving program. It is not a promise against a deliberately hostile program exploiting a kernel bug.</li>
+</ul>
+<h3 id="72-executable-capabilities-are-inferred">7.2 Executable capabilities are inferred<a class="headerlink" href="#72-executable-capabilities-are-inferred" title="Permanent link">&para;</a></h3>
+<p>The set of executables a flow may run is computed from its call graph: the <code>program</code> of each tool it reaches, and the literal <code>cmd</code> of each <code>run</code>. A dynamic <code>cmd</code> (computed at runtime) is a check error, which is the reason <code>program</code> and <code>cmd</code> must be literals. This set is an allow-list of which programs may be started. <code>weir check</code> also verifies that each program's resolved path lies under a mount in the sandbox, and reports <code>E-SANDBOX-EXEC-UNREACHABLE</code> with the fix hint <code>add mount system, or mount "&lt;dir&gt;" ro</code> if not. Weir does not add executable or library paths on its own.</p>
+<p><strong>Alternative rejected: requiring an explicit <code>needs exec</code> list.</strong> It is redundant with the call graph and goes stale; an inferred set cannot disagree with the code.</p>
+<h3 id="73-tools-narrow-the-view-components-cannot-widen-it">7.3 Tools narrow the view; components cannot widen it<a class="headerlink" href="#73-tools-narrow-the-view-components-cannot-widen-it" title="Permanent link">&para;</a></h3>
+<p>By default an external program sees the whole sandbox, with every mount in the mode it was declared. A <code>tool</code> may narrow what its program sees with <code>see</code> lines listing inside paths and a mode:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>tool nginx_test {
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  program "nginx"
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>  args ["-t"]
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>  see system
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>  see "/etc/nginx" ro
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>  see "/var/log/nginx" rw
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>  takes none
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>  yields none
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>}
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Form</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>see &lt;inside&gt; ro\|rw</code></td>
+<td>the program sees this inside path in this mode</td>
+</tr>
+<tr>
+<td><code>see system</code></td>
+<td>the system set</td>
+</tr>
+</tbody>
+</table>
+<p>When a tool has <code>see</code> lines the program sees only those paths. Each <code>see</code> must name a path that is mounted in the script's sandbox, in that mode or a more permissive one: <code>see "/data" ro</code> is satisfied by a <code>rw</code> mount of <code>/data</code>, and <code>see "/data" rw</code> is not satisfied by a <code>ro</code> mount. Otherwise the call throws <code>CapabilityError</code> naming the tool, the path and the mode, and <code>weir check</code> reports it when the paths are literal. A tool therefore never sees more than the script's sandbox, and a <code>see</code> clause can only remove access, never add it.</p>
+<p><strong>Components.</strong> Only the entry file has a file-level <code>sandbox</code> block of <code>mount</code> lines. One in an imported file is an error (<code>E-SANDBOX-NOT-ENTRY</code>); a scoped <code>within</code> block is allowed (<a href="#731-scoped-within-blocks">section 7.3.1</a>). Tools in imported components use <code>see</code> clauses, and those are their requirements: an imported tool that says <code>see "/etc/ssl" ro</code> fails the check against a script that did not mount <code>/etc/ssl</code>. A library therefore cannot widen what the script exposes, and the requirements show in the component's manifest.</p>
+<p>The caller can narrow further with <code>--ro &lt;inside-path&gt;</code> (turn a <code>rw</code> mount into <code>ro</code> for this run) and <code>--deny-exec &lt;name&gt;</code>.</p>
+<p><strong>Alternative rejected: a separate sandbox per flow.</strong> It would let one file's flows see different filesystems, but it multiplies the places to read, and a flow calling another flow would need a rule for whose sandbox wins. One file, one sandbox; tools narrow.</p>
+<p><strong>Alternative rejected: no narrowing at all.</strong> Every wrapped program would see every writable folder the script has, so a network client would have the same write access as the backup tool. Narrowing is cheap because <code>see</code> is a subset check.</p>
+<h3 id="731-scoped-within-blocks">7.3.1 Scoped <code>within</code> blocks<a class="headerlink" href="#731-scoped-within-blocks" title="Permanent link">&para;</a></h3>
+<p>A tool narrows the view for one program. A <code>within</code> block inside a flow narrows it for a stretch of the script, and can hand a value back. Its header lists the view, with the same items as a tool's <code>see</code> lines, separated by commas:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>let info = within system, "/etc" ro {
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  let kernel = run(cmd: "uname", args: ["-s", "-r"])
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  let hosts  = cat_file(file: path(text: "/etc/hosts"))
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>  return { kernel: first(of: kernel), hosts: count(of: hosts) }
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>}
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>print(text: "${info.kernel}: ${info.hosts} lines")
+</code></pre></div>
+<p>The word <code>sandbox</code> is used only for the file-level block of <a href="#71-the-script-defines-the-sandbox">section 7.1</a>, which defines the script's whole filesystem. A tool writes <code>see</code> lines, and a flow writes <code>within</code>. All three describe a view, and only the file-level block can mount anything.</p>
+<p><strong>What it covers.</strong> While the block runs, the script sees only the listed paths, in the listed modes. This applies to every program started inside it, including programs started by flows and tools called from inside it, and to the built-ins that touch the filesystem (<code>read_text</code>, <code>write</code>, <code>exists</code> and the others). A program sees the path as missing. A built-in that reads or writes it throws <code>CapabilityError</code> naming the path and the block's line, and <code>exists</code> reports <code>false</code>, as it does for any path that is not mounted. When a tool inside the block has <code>see</code> lines of its own, its program sees the intersection of the two.</p>
+<p><strong>It can only narrow.</strong> Each item must name a path that the enclosing view has, in that mode or a more permissive one, with the same rule as a tool's <code>see</code> (<a href="#73-tools-narrow-the-view-components-cannot-widen-it">section 7.3</a>); otherwise <code>weir check</code> reports <code>E-SEE-UNMOUNTED</code> when the paths are literal. Blocks nest, and each level can only narrow the one outside it. <code>--ro</code> and <code>--deny-exec</code> still apply on top. A <code>within</code> block in an imported file is allowed, because it cannot widen anything.</p>
+<p><strong><code>return</code>.</strong> <code>return &lt;expr&gt;</code> inside the block leaves the block with that value. It never returns from the flow, so it cannot be confused with anything else: a flow sets outputs with <code>set</code> and has no <code>return</code> of its own.</p>
+<ul>
+<li>A block used as a value (<code>let x = within ... { ... }</code>) must return on every path; otherwise <code>weir check</code> reports <code>E-WITHIN-NO-RETURN</code>. There is no implicit value: the block's last expression is not its result.</li>
+<li>A block used as a plain statement may have no <code>return</code>, or a bare <code>return</code> that leaves early.</li>
+<li>Every <code>return</code> in one block must have the same type.</li>
+<li>A <code>return</code> inside a loop inside the block leaves both the loop and the block.</li>
+<li>A thrown error leaves the block like any other scope and nothing is returned.</li>
+<li>Variables declared inside the block are local to it. The value it returns is the way to hand data out.</li>
+</ul>
+<p><strong>Not in a <code>fn</code>.</strong> A <code>fn</code> is pure and cannot start programs, so a <code>within</code> block there is <code>E-FN-IMPURE</code>.</p>
+<p><strong>Cost.</strong> Each program started inside the block gets its own narrowed root, built from the block's view just before it starts. On the development machine that adds about 0.6 ms per program (200 <code>run</code> calls took 0.18 s inside a block and 0.05 s outside). Building the root once per block and having each program join it is possible later if that ever matters; it would not change the language.</p>
+<p><strong>Alternative rejected: a <code>see:</code> argument on <code>run</code>.</strong> It repeats the list on every call and cannot cover the built-ins.</p>
+<p><strong>Alternative rejected: the block's last expression as its value.</strong> A trailing <code>{ ... }</code> is ambiguous between a record and a nested block, and an implicit result is easy to produce by accident with a stray last line.</p>
+<p><strong>Alternative rejected: reusing <code>sandbox</code> for the block.</strong> One word then meant three things: the whole script's filesystem, a tool's narrowing, and a scope with a value. The header of <code>within</code> can also grow other clauses later without renaming it.</p>
+<h3 id="74-destructive-built-ins">7.4 Destructive built-ins<a class="headerlink" href="#74-destructive-built-ins" title="Permanent link">&para;</a></h3>
+<p>The built-ins <code>delete</code> and <code>move</code> refuse the sandbox root <code>/</code> and any mount point itself (the mounted folder as a whole, as distinct from its contents), in addition to failing on read-only mounts like any write. This is a backstop for the empty-variable <code>rm -rf "$DIR/"</code> case. An external <code>rm</code> is confined by the sandbox but is not subject to the extra refusals (<a href="#711-what-the-sandbox-does-not-cover">section 7.1.1</a>). Because <code>path</code> values are never concatenated from strings and an unset input is <code>absent</code> rather than empty, most such cases are caught earlier by the type system.</p>
+<h3 id="75-not-covered">7.5 Not covered<a class="headerlink" href="#75-not-covered" title="Permanent link">&para;</a></h3>
+<p>Network access is not a declared capability in v1, and the sandbox does not unshare the network namespace, because most useful scripts need the network. A permitted program may open any connection. This is a known gap (<a href="#19-open-questions-and-known-weaknesses">section 19</a>). Allowed hosts and ports are deferred.</p>
+<h3 id="76-mechanism-and-availability">7.6 Mechanism and availability<a class="headerlink" href="#76-mechanism-and-availability" title="Permanent link">&para;</a></h3>
+<p><strong>Mechanism.</strong> The sandbox is a mount namespace entered with <code>pivot_root</code>, created through an unprivileged user namespace, so no root is needed. A plain <code>chroot(2)</code> is not used: it requires root and is not a security boundary, because a process with root inside a chroot can escape it. Creating a user namespace requires a single-threaded caller, so <code>weir run</code> re-executes itself as a small single-threaded stage (<code>weir __sandbox-run</code>) that creates the user, mount and PID namespaces, builds the mount table, rebuilds the environment, calls <code>pivot_root</code>, and continues as the interpreter inside the sandbox. The interpreter becomes process 1 of the new PID namespace and reaps its children. For a program whose tool has a <code>sandbox</code> clause, Weir creates a nested mount namespace for that child and bind-mounts only the <code>see</code> paths into it, which a process may do inside its own user namespace.</p>
+<p>The interpreter must be able to run after the host is gone. The release binary is statically linked (musl) and does not read host libraries once the sandbox is entered.</p>
+<p><strong>Availability.</strong> v1 supports Linux only, because the mechanism is Linux namespaces. If the sandbox cannot be created (unprivileged user namespaces disabled, a container that forbids them, an unsupported platform), Weir exits 4 with a message naming the cause. It does not fall back to running unconfined unless the operator asks for that with <code>--sandbox auto</code> or <code>WEIR_SANDBOX=auto</code>.</p>
+<p>The only overrides are the CLI option <code>--sandbox &lt;mode&gt;</code> and the environment variable <code>WEIR_SANDBOX</code>; the option wins over the variable. The modes are:</p>
+<ul>
+<li><code>required</code>, the default: build the sandbox or exit 4.</li>
+<li><code>auto</code>: build it if the host allows, and otherwise warn, naming the cause, and run without it. It is meant for a host that is already isolated, such as a CI job in a container. Weir tests whether the sandbox can be built in a short-lived child process before the script starts.</li>
+<li><code>off</code>: never build it. <code>--no-sandbox</code> is the same as <code>--sandbox off</code>.</li>
+</ul>
+<p>A script cannot choose its own mode. Without the script's sandbox, <code>see</code> lines and <code>within</code> blocks still apply: each program that has one gets a view of its own, built in a user and mount namespace of its own, with the host paths as they are. Where the host forbids namespaces, <code>off</code> fails the program with the cause, and <code>auto</code> skips the views too and says so in its warning. Running without a sandbox prints a warning on stderr and is recorded in the <code>--json</code> result as <code>"sandbox": false</code>. Without a sandbox no namespaces are created and every inside path is used as a host path, so it works only for a script whose mounts all map a path to itself (<code>mount "/x" rw</code>, <code>mount system</code>). A script with a remapping mount (<code>mount logs at "/logs" ro</code>) exits 2 under <code>off</code>, and exits 4 when <code>auto</code> fell back because the sandbox could not be built.</p>
+<p>A script that uses only built-ins and <code>fn</code>s still runs in the sandbox when it declares one; with no <code>sandbox</code> block it runs unconfined, and <code>weir check</code> reports <code>W-NO-SANDBOX</code> for any file that starts an external program without one. Non-Linux hosts can run such scripts.</p>
+<p><strong>Checking the declaration.</strong> Because the script, not Weir, decides what is mounted, a wrong declaration shows up as a path that is not there, a program that cannot start, or a library it cannot find. Weir turns these into messages that name the sandbox:</p>
+<ul>
+<li><code>E-SANDBOX-EXEC-UNREACHABLE</code> (static), as described in <a href="#72-executable-capabilities-are-inferred">section 7.2</a>;</li>
+<li>a filesystem error inside the sandbox (<code>ENOENT</code>, <code>EROFS</code>, <code>EACCES</code>) on a path outside every mount, or on a read-only mount, is reported with the inside path, the nearest mount and its mode;</li>
+<li>if a program fails to start because the loader cannot find a library, the error lists the mount table.</li>
+</ul>
+<p><code>weir sandbox suggest &lt;file&gt;</code> is a separate tool that reports, for each tool, the executable and library paths it found by reading the binary's ELF dependencies and <code>#!</code> interpreter, and prints suggested <code>mount</code> and <code>see</code> lines. It is a helper for writing the declaration; nothing is derived from it at run time. It cannot see <code>dlopen</code>ed libraries or helper programs the tool runs (<code>git-*</code>, an <code>ssh</code> <code>ProxyCommand</code>).</p>
+<p><code>weir run --plan</code> and <code>weir list --manifest</code> print the resolved mount table, with host and inside paths, so what a script exposes can be reviewed without running it.</p>
+<p><strong>Costs and open problems.</strong></p>
+<ul>
+<li><strong>Verbosity.</strong> Every script that runs an external program carries a sandbox block, and a wrong one is the author's bug. <code>mount system</code> removes the worst of the repetition; it does not remove the need to know that <code>curl</code> wants <code>/etc/ssl</code> or that <code>systemctl</code> wants a socket.</li>
+<li><strong>Tools needing unusual paths.</strong> Programs routinely need more than their obvious paths: locale and certificate stores, NSS modules, helper binaries, daemon sockets. Each is a mount the author must find.</li>
+<li><strong>Daemon sockets.</strong> <code>systemctl</code> and <code>docker</code> need their socket mounted <code>rw</code>, which punches a hole the sandbox cannot describe. A tool's <code>see</code> clause limits which programs get it.</li>
+<li><strong>Single-file mounts.</strong> A file bind-mounted at a path cannot be replaced by rename, only written in place. Built-ins that normally write a temporary file and rename it must write in place when the target is a mount point.</li>
+<li><strong>Network confinement</strong> is separate and not included.</li>
+<li><strong>Bind mounts expose the real tree.</strong> A <code>rw</code> mount is writable in full.</li>
+</ul>
+<p><strong>Deferred refinements.</strong> Mounting <code>rw</code> paths through overlayfs with a scratch layer would let <code>weir run --plan</code> run external programs and report the file changes they made, which would address the biggest weakness of <code>--plan</code> (<a href="#195-weaknesses-in-the-design-as-it-stands">section 19.5</a>), and would allow committing a step's changes only on success. Landlock could serve as a second backend on systems where user namespaces are disabled.</p>
+<p><strong>Alternative rejected: Weir derives the sandbox contents automatically</strong> (system directories by default, executable and library paths found by dependency resolution). It makes scripts shorter, but the real filesystem view then depends on the host's libraries and on resolver logic inside Weir, cannot be read from the script, and fails differently on different machines. An author reading a script should be able to see what it can touch. The discovery work is kept as a suggestion tool instead.</p>
+<p><strong>Alternative rejected: per-operation scope declarations (<code>needs read</code> and <code>needs write</code>) checked by the interpreter, with externals sandboxed separately.</strong> It gives two path spaces, one for built-ins and one for programs, which have to be kept consistent by the author. A single sandbox that the interpreter itself lives in removes the second space and the scope checks.</p>
+<p><strong>Alternative rejected: leaving confinement to the user (run Weir under <code>bwrap</code>, Docker or systemd sandboxing).</strong> The declared filesystem is already in the script, and a sandbox configured separately from it will drift from it. Making the sandbox part of the interpreter keeps the declaration and the enforcement together, and keeps one behaviour on every host that runs the script.</p>
+<p><strong>Alternative rejected: a weaker, best-effort sandbox.</strong> A sandbox that sometimes silently does not apply gives a guarantee that appears to hold and does not. Refusing to run is the only honest alternative to a working sandbox.</p>
+<h2 id="8-calls-and-naming">8. Calls and Naming<a class="headerlink" href="#8-calls-and-naming" title="Permanent link">&para;</a></h2>
+<p>Every call uses named arguments, in any order, for flows, tools, fns and built-ins alike. There is no positional form.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>copy(from: a, to: b)
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>copy(to: b, from: a)     // identical
+</code></pre></div>
+<p><strong>Rationale.</strong> Models and people mis-order positional arguments, and an unnamed second <code>path</code> argument cannot be checked for meaning. With names, the checker can say "missing argument <code>to</code>" rather than guess. The cost is verbosity, accepted deliberately.</p>
+<p>Optional parameters have defaults. The checker warns (<code>W-DEFAULT-ARG</code>) when a call passes an argument equal to the default, because it is noise and often hides a stale assumption when the default later changes. A pragma suppresses the warning where the explicit value is intentional:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>// weir:allow W-DEFAULT-ARG
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>copy(from: a, to: b, overwrite: false)
+</code></pre></div>
+<p><strong>Alternative rejected: positional for the first argument.</strong> A single exception to the rule is enough to make the rule unreliable for a model that has to remember which calls are exceptions.</p>
+<h2 id="9-pipelines">9. Pipelines<a class="headerlink" href="#9-pipelines" title="Permanent link">&para;</a></h2>
+<p>A pipeline is a chain of stages joined with <code>.</code>, in the same method-call style used for chaining in most general-purpose languages. A stage is a native stage, a declared tool, or a <code>run</code> command. Weir has no <code>|</code> operator. The stage on the left supplies the stage on the right with its input: the output of the previous stage, whether that is a program's stdout, a list, or a stream.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>journalctl(unit: "sshd").filter(where: ...).take(n: 5)
+</code></pre></div>
+<p>A failing stage fails the pipeline, always. There is no <code>pipefail</code> switch because there is no mode in which a failure is ignored.</p>
+<p><strong>Parsing rules.</strong> <code>.name(...)</code> with parentheses is a stage application; <code>.name</code> without parentheses is member access (<code>it.count</code>, <code>left.days</code>). A line that begins with <code>.</code> continues the expression on the previous line, so long chains can be laid out one stage per line.</p>
+<p><strong>Why <code>.</code> and not <code>|</code>.</strong> Programs are never invoked as bare text in Weir: every one is wrapped in a typed <code>tool</code> and called with named arguments. Once that is true, <code>|</code> no longer means "connect two processes' file descriptors", and it carries bash's associations (and bash's silent-failure semantics). Dot chaining reads like the rest of the language, works identically on a list that is already in memory and on a stream from a program, and is what most programmers and models will expect, so there is less to learn. The cost is that "a stage" and "a method" look the same; the checker resolves the name against native stages and declared tools, and an unknown name is reported with the list of what was in scope.</p>
+<p><strong>Alternative rejected: keeping <code>|</code> as well.</strong> Two spellings for one thing mean every example and every lint rule has to handle both, and a model will mix them.</p>
+<h3 id="91-native-stages">9.1 Native stages<a class="headerlink" href="#91-native-stages" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Signature (named args)</th>
+<th>Streams?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lines</code></td>
+<td><code>lines()</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>map</code></td>
+<td><code>map(to: expr)</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>filter</code></td>
+<td><code>filter(where: expr)</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>take</code></td>
+<td><code>take(n: int)</code></td>
+<td>yes, and stops upstream early</td>
+</tr>
+<tr>
+<td><code>unique</code></td>
+<td><code>unique()</code> or <code>unique(by: expr)</code></td>
+<td>streams output, but holds every distinct key in memory</td>
+</tr>
+<tr>
+<td><code>count</code></td>
+<td><code>count()</code></td>
+<td>consumes all input, O(1) memory</td>
+</tr>
+<tr>
+<td><code>count_by</code></td>
+<td><code>count_by(key: expr)</code></td>
+<td>buffers; emits <code>{key, count}</code> at end</td>
+</tr>
+<tr>
+<td><code>sort_by</code></td>
+<td><code>sort_by(key: expr, order: asc\|desc)</code></td>
+<td>buffers all input</td>
+</tr>
+</tbody>
+</table>
+<p>Native stages are generic over element type: they work on text lines and on parsed records alike. Inside a stage's expression, <code>it</code> is the current element.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>let top = journalctl(unit: "sshd")
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>  .filter(where: contains(text: it, part: "Failed password"))
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>  .map(to: ip_of(line: it))
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>  .count_by(key: it)
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>  .sort_by(key: it.count, order: desc)
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>  .take(n: 10)
+</code></pre></div>
+<h3 id="92-failure-and-early-termination">9.2 Failure and early termination<a class="headerlink" href="#92-failure-and-early-termination" title="Permanent link">&para;</a></h3>
+<p>When <code>take</code> has enough elements it closes its input, which makes the upstream program receive <code>SIGPIPE</code>/a write error and exit non-zero. The interpreter must not treat that as a pipeline failure. The rule: a stage terminated by the interpreter's own close is not a failure. A stage that exits non-zero for any other reason is. Distinguishing the two reliably across platforms is implementation work (<a href="#19-open-questions-and-known-weaknesses">section 19</a>).</p>
+<h3 id="93-binding">9.3 Binding<a class="headerlink" href="#93-binding" title="Permanent link">&para;</a></h3>
+<p>Binding a pipeline to a typed <code>let</code> materialises it into the declared type (<code>list&lt;T&gt;</code>, <code>string</code>, ...). A pipeline in statement position is run for its effect. A pipeline whose last stage is a command with <code>yields none</code> is a statement.</p>
+<p><strong>Alternative rejected: lazy streams as a first-class value.</strong> Passing a half-consumed stream around makes lifetime and failure timing hard to reason about. A pipeline either runs where it appears or is materialised where it is bound.</p>
+<h2 id="10-components">10. Components<a class="headerlink" href="#10-components" title="Permanent link">&para;</a></h2>
+<p><code>use</code> imports from a local path, a GitHub repository, or an Artifactory/Nexus URL. <code>#name</code> selects one flow from a file.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>use "./lib/net.weir"
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>use "github:acme/weir-lib/rotate.weir@v1.4.0#rotate_files"
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>use "https://artifactory.example.com/weir/tls.weir@2.1.0#check_expiry"
+</code></pre></div>
+<h3 id="101-lockfile">10.1 Lockfile<a class="headerlink" href="#101-lockfile" title="Permanent link">&para;</a></h3>
+<p><code>weir lock</code> writes <code>weir.lock</code>, pinning each remote component by version and content hash (SHA-256). <code>weir run</code> and <code>weir check</code> fail with exit 3 if a fetched component's hash does not match. Local paths are not pinned.</p>
+<h3 id="102-manifests">10.2 Manifests<a class="headerlink" href="#102-manifests" title="Permanent link">&para;</a></h3>
+<p>Each component's header (inputs, outputs, defaults, and the <code>see</code> requirements of its tools) is parseable without reading its body. <code>weir list --manifest &lt;file&gt;</code> prints it, and for an entry file also prints the resolved mount table. This lets a caller check what a component needs, and lets the checker validate calls, without trusting or executing the component. The inferred executable set is part of the manifest and is computed from the component's own call graph.</p>
+<p><strong>Alternative rejected: unpinned <code>use</code> of a branch.</strong> A moving dependency makes <code>weir check</code> results time-dependent.</p>
+<h2 id="11-cli-surface">11. CLI Surface<a class="headerlink" href="#11-cli-surface" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>weir run   &lt;file&gt; [flow] [--flags]
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>weir check &lt;file&gt; [--json]
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>weir list  &lt;file&gt; [--manifest]
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>weir test  [path]
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>weir lock  [file]
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>weir sandbox suggest &lt;file&gt;
+</code></pre></div>
+<h3 id="111-generated-flags">11.1 Generated flags<a class="headerlink" href="#111-generated-flags" title="Permanent link">&para;</a></h3>
+<p>A file-level <code>sandbox</code> block's <code>in</code> values generate flags in the same way (<a href="#71-the-script-defines-the-sandbox">section 7.1</a>). Typed inputs generate flags and <code>--help</code>. <code>in count: int = 3</code> becomes <code>--count &lt;int&gt;</code> with <code>3</code> shown as default. <code>list&lt;T&gt;</code> inputs accept repeated flags. <code>bool</code> inputs are <code>--flag</code> / <code>--no-flag</code>. Enums list their values in <code>--help</code>. A value that fails to parse as its declared type is exit 2 with the offending flag named. A <code>path</code> value is a host path and is translated to the inside path through the mount table; one that falls under no mount is also exit 2, and the message lists the mounts.</p>
+<h3 id="1111-run-time-control-flags">11.1.1 Run-time control flags<a class="headerlink" href="#1111-run-time-control-flags" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>--confirm</code>: run <code>confirmable</code> steps.</li>
+<li><code>--plan</code>: print what would happen and run nothing.</li>
+<li><code>--ro INSIDE_PATH</code>, <code>--deny-exec NAME</code>: narrow the sandbox for this run: turn a <code>rw</code> mount into <code>ro</code>, or refuse to start a program (<a href="#73-tools-narrow-the-view-components-cannot-widen-it">section 7.3</a>).</li>
+<li><code>--sandbox &lt;required|auto|off&gt;</code>: what to do when the filesystem sandbox cannot be created (<a href="#76-mechanism-and-availability">section 7.6</a>); <code>WEIR_SANDBOX</code> sets the same. <code>--no-sandbox</code> is <code>--sandbox off</code>. Running without the sandbox prints a warning on stderr and works only for scripts whose mounts all map a path to itself. Not settable from a script.</li>
+</ul>
+<h3 id="112-input-flags">11.2 Input flags<a class="headerlink" href="#112-input-flags" title="Permanent link">&para;</a></h3>
+<p><code>secret</code> inputs are never accepted on argv, because argv is visible in <code>ps</code> and shell history. They come from:</p>
+<ul>
+<li><code>--secrets-file &lt;path&gt;</code>, a file of <code>NAME=value</code> lines (file mode must not be group/world readable; the option can be repeated),</li>
+<li><code>--secrets-stdin</code>, which prompts for each secret not in a file, with echo off (Enter on an empty answer uses the environment variable, if it is set), when stdin is a terminal, and otherwise reads <code>NAME=value</code> lines to EOF,</li>
+<li>the environment variable <code>WEIR_SECRET_&lt;NAME&gt;</code>.</li>
+</ul>
+<p><code>NAME</code> is the input name in upper case. A line in a file or feed has the form of an environment file: blank lines and <code>#</code> comments are skipped, an <code>export</code> prefix is allowed, and a value in matching quotes loses them. There is no interpolation or escaping.</p>
+<p>If more than one is given, the order is file, then stdin, then the environment variable. A secret that has none of them is exit 2, and so is supplying one as <code>--token x</code>; both messages name these alternatives. The <a href="../secrets/">Secrets page</a> covers this from the user's side.</p>
+<h3 id="113-output-channels">11.3 Output channels<a class="headerlink" href="#113-output-channels" title="Permanent link">&para;</a></h3>
+<p>stdout carries either the script's own output or the machine-readable result, never both.</p>
+<ul>
+<li>By default, <code>print</code> writes to stdout, and the result is not emitted.</li>
+<li>With <code>--json</code>, stdout carries a single JSON document: <code>{"ok": bool, "exit": int, "outputs": {...}, "error": {...}?, "steps": [...]}</code>. <code>print</code> is redirected to stderr.</li>
+<li>With <code>--out &lt;name&gt;</code>, stdout carries the single named output as raw text (a <code>list</code> becomes one element per line). <code>print</code> is redirected to stderr.</li>
+</ul>
+<p>Diagnostics and logs always go to stderr. The <code>--json</code> document includes <code>"sandbox": true</code> or, when the script ran without a sandbox, <code>"sandbox": false</code>. Outputs assigned before a failure appear in the <code>--json</code> document, so a caller can see partial results.</p>
+<p><strong>Alternative rejected: always emit the result to stdout and the human text to stderr.</strong> It makes the common interactive case (<code>weir run cleanup.weir</code>) print nothing readable on stdout, and a script that prints and also returns data is the case this rule exists to disambiguate.</p>
+<h2 id="12-testing">12. Testing<a class="headerlink" href="#12-testing" title="Permanent link">&para;</a></h2>
+<p>A <code>test</code> declaration runs under <code>weir test</code> against fixtures: a temporary directory tree, and stubs for tools.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>test "ip_of takes the first field" {
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>  expect ip_of(line: "10.0.0.1 - - GET /") == "10.0.0.1"
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>}
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>test "ban_noisy_clients writes only offenders" {
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>  fixture dir "/var/log/nginx" {
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    file "access.log" text: "10.0.0.1 ... 500\n10.0.0.2 ... 200\n"
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>  }
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>  stub tail yields lines: ["10.0.0.1 ... 500", "10.0.0.2 ... 200"]
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>  run ban_noisy_clients(threshold: 1)
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>  expect exists(path: "/etc/nginx/conf.d/blocklist.conf")
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>}
+</code></pre></div>
+<p>A stub can name arguments, <code>stub tail(file: "/var/log/a") yields lines: [...]</code>, and then it answers only calls that pass those values. When several stubs match a call they answer in turn, the first call getting the first, and the last answering every call after. A tool that yields <code>none</code> is stubbed with <code>stub f yields none</code>.</p>
+<p>Tests never touch the real filesystem or run real programs unless a test explicitly opts in. Each test runs in its own sandbox made of its fixtures, with each <code>fixture dir</code> appearing at its stated path, so a flow under test sees only what the test gave it. <code>fn</code> tests need no fixtures. This section is deliberately thin; fixture semantics are listed as an open question.</p>
+<h2 id="13-worked-example-log-analysis-and-config-change">13. Worked Example: Log Analysis and Config Change<a class="headerlink" href="#13-worked-example-log-analysis-and-config-change" title="Permanent link">&para;</a></h2>
+<p>Read a web server's access log, find clients producing many error responses, write them to a blocklist included by the server's configuration, validate the configuration, and reload the server, with the reload gated behind <code>--confirm</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>// ban_noisy_clients.weir
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>sandbox {
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>  mount system
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>  mount "/var/log/nginx" rw          // the access log; nginx -t also writes its error log here
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>  mount "/etc/nginx" ro
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>  mount "/etc/nginx/conf.d" rw       // more specific, so the blocklist and its backup are writable
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>  mount "/run/lock" rw               // the lock file must be on a shared (host) mount
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>  mount "/run/systemd" ro
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>  mount "/run/dbus/system_bus_socket" rw
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>}
+<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a>tool tail {
+<a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a>  program "tail"
+<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>  in file: path
+<a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a>  in n: int
+<a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a>  args ["-n", string(value: n), file]
+<a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a>  see system                           // narrows: tail sees the system set and the log folder, read-only
+<a id="__codelineno-20-18" name="__codelineno-20-18" href="#__codelineno-20-18"></a>  see "/var/log/nginx" ro
+<a id="__codelineno-20-19" name="__codelineno-20-19" href="#__codelineno-20-19"></a>  takes none
+<a id="__codelineno-20-20" name="__codelineno-20-20" href="#__codelineno-20-20"></a>  yields lines
+<a id="__codelineno-20-21" name="__codelineno-20-21" href="#__codelineno-20-21"></a>}
+<a id="__codelineno-20-22" name="__codelineno-20-22" href="#__codelineno-20-22"></a>
+<a id="__codelineno-20-23" name="__codelineno-20-23" href="#__codelineno-20-23"></a>tool nginx_test {
+<a id="__codelineno-20-24" name="__codelineno-20-24" href="#__codelineno-20-24"></a>  program "nginx"
+<a id="__codelineno-20-25" name="__codelineno-20-25" href="#__codelineno-20-25"></a>  args ["-t"]
+<a id="__codelineno-20-26" name="__codelineno-20-26" href="#__codelineno-20-26"></a>  see system
+<a id="__codelineno-20-27" name="__codelineno-20-27" href="#__codelineno-20-27"></a>  see "/etc/nginx" ro
+<a id="__codelineno-20-28" name="__codelineno-20-28" href="#__codelineno-20-28"></a>  see "/var/log/nginx" rw         // nginx -t opens its error log
+<a id="__codelineno-20-29" name="__codelineno-20-29" href="#__codelineno-20-29"></a>  takes none
+<a id="__codelineno-20-30" name="__codelineno-20-30" href="#__codelineno-20-30"></a>  yields none
+<a id="__codelineno-20-31" name="__codelineno-20-31" href="#__codelineno-20-31"></a>}
+<a id="__codelineno-20-32" name="__codelineno-20-32" href="#__codelineno-20-32"></a>
+<a id="__codelineno-20-33" name="__codelineno-20-33" href="#__codelineno-20-33"></a>tool systemctl {
+<a id="__codelineno-20-34" name="__codelineno-20-34" href="#__codelineno-20-34"></a>  program "systemctl"
+<a id="__codelineno-20-35" name="__codelineno-20-35" href="#__codelineno-20-35"></a>  in action: enum(reload, restart, status)
+<a id="__codelineno-20-36" name="__codelineno-20-36" href="#__codelineno-20-36"></a>  in unit: string
+<a id="__codelineno-20-37" name="__codelineno-20-37" href="#__codelineno-20-37"></a>  args [action, unit]
+<a id="__codelineno-20-38" name="__codelineno-20-38" href="#__codelineno-20-38"></a>  see system
+<a id="__codelineno-20-39" name="__codelineno-20-39" href="#__codelineno-20-39"></a>  see "/run/systemd" ro
+<a id="__codelineno-20-40" name="__codelineno-20-40" href="#__codelineno-20-40"></a>  see "/run/dbus/system_bus_socket" rw
+<a id="__codelineno-20-41" name="__codelineno-20-41" href="#__codelineno-20-41"></a>  takes none
+<a id="__codelineno-20-42" name="__codelineno-20-42" href="#__codelineno-20-42"></a>  yields none
+<a id="__codelineno-20-43" name="__codelineno-20-43" href="#__codelineno-20-43"></a>}
+<a id="__codelineno-20-44" name="__codelineno-20-44" href="#__codelineno-20-44"></a>
+<a id="__codelineno-20-45" name="__codelineno-20-45" href="#__codelineno-20-45"></a>fn status_of(line: string) -&gt; int {
+<a id="__codelineno-20-46" name="__codelineno-20-46" href="#__codelineno-20-46"></a>  // combined log format: the status code is the 9th space-separated field
+<a id="__codelineno-20-47" name="__codelineno-20-47" href="#__codelineno-20-47"></a>  return int(text: nth(of: split(text: line, on: " "), index: 8))
+<a id="__codelineno-20-48" name="__codelineno-20-48" href="#__codelineno-20-48"></a>}
+<a id="__codelineno-20-49" name="__codelineno-20-49" href="#__codelineno-20-49"></a>
+<a id="__codelineno-20-50" name="__codelineno-20-50" href="#__codelineno-20-50"></a>fn ip_of(line: string) -&gt; string {
+<a id="__codelineno-20-51" name="__codelineno-20-51" href="#__codelineno-20-51"></a>  return nth(of: split(text: line, on: " "), index: 0)
+<a id="__codelineno-20-52" name="__codelineno-20-52" href="#__codelineno-20-52"></a>}
+<a id="__codelineno-20-53" name="__codelineno-20-53" href="#__codelineno-20-53"></a>
+<a id="__codelineno-20-54" name="__codelineno-20-54" href="#__codelineno-20-54"></a>fn render_blocklist(ips: list&lt;string&gt;) -&gt; string {
+<a id="__codelineno-20-55" name="__codelineno-20-55" href="#__codelineno-20-55"></a>  let rules = ips.map(to: "deny ${it};")
+<a id="__codelineno-20-56" name="__codelineno-20-56" href="#__codelineno-20-56"></a>  return join(items: rules, with: "\n") + "\n"
+<a id="__codelineno-20-57" name="__codelineno-20-57" href="#__codelineno-20-57"></a>}
+<a id="__codelineno-20-58" name="__codelineno-20-58" href="#__codelineno-20-58"></a>
+<a id="__codelineno-20-59" name="__codelineno-20-59" href="#__codelineno-20-59"></a>main flow ban_noisy_clients {
+<a id="__codelineno-20-60" name="__codelineno-20-60" href="#__codelineno-20-60"></a>  in log: path = path(text: "/var/log/nginx/access.log")
+<a id="__codelineno-20-61" name="__codelineno-20-61" href="#__codelineno-20-61"></a>  in blocklist: path = path(text: "/etc/nginx/conf.d/blocklist.conf")
+<a id="__codelineno-20-62" name="__codelineno-20-62" href="#__codelineno-20-62"></a>  in window: int = 50000        // most recent N log lines to examine
+<a id="__codelineno-20-63" name="__codelineno-20-63" href="#__codelineno-20-63"></a>  in threshold: int = 200       // error responses before a client is banned
+<a id="__codelineno-20-64" name="__codelineno-20-64" href="#__codelineno-20-64"></a>  out banned: list&lt;string&gt;
+<a id="__codelineno-20-65" name="__codelineno-20-65" href="#__codelineno-20-65"></a>
+<a id="__codelineno-20-66" name="__codelineno-20-66" href="#__codelineno-20-66"></a>  requires exists(path: log)
+<a id="__codelineno-20-67" name="__codelineno-20-67" href="#__codelineno-20-67"></a>  lock "/run/lock/ban_noisy_clients.lock"
+<a id="__codelineno-20-68" name="__codelineno-20-68" href="#__codelineno-20-68"></a>
+<a id="__codelineno-20-69" name="__codelineno-20-69" href="#__codelineno-20-69"></a>  var offenders: list&lt;string&gt; = []
+<a id="__codelineno-20-70" name="__codelineno-20-70" href="#__codelineno-20-70"></a>
+<a id="__codelineno-20-71" name="__codelineno-20-71" href="#__codelineno-20-71"></a>  find_offenders {
+<a id="__codelineno-20-72" name="__codelineno-20-72" href="#__codelineno-20-72"></a>    let found = tail(file: log, n: window)
+<a id="__codelineno-20-73" name="__codelineno-20-73" href="#__codelineno-20-73"></a>      .filter(where: status_of(line: it) &gt;= 400)
+<a id="__codelineno-20-74" name="__codelineno-20-74" href="#__codelineno-20-74"></a>      .count_by(key: ip_of(line: it))
+<a id="__codelineno-20-75" name="__codelineno-20-75" href="#__codelineno-20-75"></a>      .filter(where: it.count &gt;= threshold)
+<a id="__codelineno-20-76" name="__codelineno-20-76" href="#__codelineno-20-76"></a>      .sort_by(key: it.count, order: desc)
+<a id="__codelineno-20-77" name="__codelineno-20-77" href="#__codelineno-20-77"></a>      .map(to: it.key)
+<a id="__codelineno-20-78" name="__codelineno-20-78" href="#__codelineno-20-78"></a>    offenders = found
+<a id="__codelineno-20-79" name="__codelineno-20-79" href="#__codelineno-20-79"></a>    set banned = offenders
+<a id="__codelineno-20-80" name="__codelineno-20-80" href="#__codelineno-20-80"></a>  }
+<a id="__codelineno-20-81" name="__codelineno-20-81" href="#__codelineno-20-81"></a>
+<a id="__codelineno-20-82" name="__codelineno-20-82" href="#__codelineno-20-82"></a>  write_blocklist {
+<a id="__codelineno-20-83" name="__codelineno-20-83" href="#__codelineno-20-83"></a>    when count(of: offenders) &gt; 0
+<a id="__codelineno-20-84" name="__codelineno-20-84" href="#__codelineno-20-84"></a>    let backup = blocklist.with_suffix(text: ".bak")
+<a id="__codelineno-20-85" name="__codelineno-20-85" href="#__codelineno-20-85"></a>    copy(from: blocklist, to: backup)
+<a id="__codelineno-20-86" name="__codelineno-20-86" href="#__codelineno-20-86"></a>    write(file: blocklist, text: render_blocklist(ips: offenders))
+<a id="__codelineno-20-87" name="__codelineno-20-87" href="#__codelineno-20-87"></a>  }
+<a id="__codelineno-20-88" name="__codelineno-20-88" href="#__codelineno-20-88"></a>
+<a id="__codelineno-20-89" name="__codelineno-20-89" href="#__codelineno-20-89"></a>  validate {
+<a id="__codelineno-20-90" name="__codelineno-20-90" href="#__codelineno-20-90"></a>    when count(of: offenders) &gt; 0
+<a id="__codelineno-20-91" name="__codelineno-20-91" href="#__codelineno-20-91"></a>    nginx_test()
+<a id="__codelineno-20-92" name="__codelineno-20-92" href="#__codelineno-20-92"></a>  }
+<a id="__codelineno-20-93" name="__codelineno-20-93" href="#__codelineno-20-93"></a>
+<a id="__codelineno-20-94" name="__codelineno-20-94" href="#__codelineno-20-94"></a>  reload {
+<a id="__codelineno-20-95" name="__codelineno-20-95" href="#__codelineno-20-95"></a>    when count(of: offenders) &gt; 0
+<a id="__codelineno-20-96" name="__codelineno-20-96" href="#__codelineno-20-96"></a>    systemctl(action: "reload", unit: "nginx")
+<a id="__codelineno-20-97" name="__codelineno-20-97" href="#__codelineno-20-97"></a>  } confirmable
+<a id="__codelineno-20-98" name="__codelineno-20-98" href="#__codelineno-20-98"></a>
+<a id="__codelineno-20-99" name="__codelineno-20-99" href="#__codelineno-20-99"></a>  finally {
+<a id="__codelineno-20-100" name="__codelineno-20-100" href="#__codelineno-20-100"></a>    print(text: "examined ${window} lines, ${count(of: offenders)} client(s) over threshold")
+<a id="__codelineno-20-101" name="__codelineno-20-101" href="#__codelineno-20-101"></a>  }
+<a id="__codelineno-20-102" name="__codelineno-20-102" href="#__codelineno-20-102"></a>}
+</code></pre></div>
+<p>Points worth noting:</p>
+<ul>
+<li>The script's whole filesystem is the <code>sandbox</code> block. <code>tail</code>, <code>nginx</code> and <code>systemctl</code> each see only their <code>see</code> paths, which must be mounted in the sandbox in at least that mode. The backup file lands next to the blocklist, in <code>/etc/nginx/conf.d</code>, which is mounted <code>rw</code>, so the <code>copy</code> succeeds. Had it been written to <code>/etc/nginx/blocklist.bak</code>, that path falls under the <code>ro</code> mount of <code>/etc/nginx</code>, the write fails with a read-only error, and the message names the mount and its mode. Producing that message is the kind of thing the runtime must get right.</li>
+<li>The inferred executable set is <code>{tail, nginx, systemctl}</code>. <code>weir check</code> confirms each resolves under the mounts the program sees (<code>mount system</code> covers <code>/usr/bin</code> and <code>/usr/sbin</code>). A caller can see the resolved mount table with <code>weir list --manifest</code>, and <code>weir run --plan</code> prints it. Passing <code>--log /var/log/nginx/access.log.1</code> works because that host path falls under the <code>/var/log/nginx</code> mount.</li>
+<li>The <code>systemctl</code> socket mount is a real hole in the sandbox: it is writable, and <code>systemd</code> will act on requests sent through it. The sandbox cannot describe that. The <code>see</code> clauses limit it to the one tool that needs it, and the mount is visible at the top of the script.</li>
+<li>The flow is safe to run from cron. Without <code>--confirm</code> it updates the blocklist and validates it, then reports <code>reload: skipped: unconfirmed</code>. An operator can follow with <code>weir run ban_noisy_clients.weir --confirm</code>, or put <code>--confirm</code> in the cron line once they trust it.</li>
+<li>If <code>nginx_test()</code> fails the flow fails with exit 1 and the <code>.bak</code> file is left in place. A production version would restore the backup in a <code>catch</code>; it is omitted here to keep the example short.</li>
+<li><code>tail(...).filter(...).count_by(...)</code> streams until <code>count_by</code>, which buffers one counter per distinct IP, then <code>sort_by</code> buffers the resulting (smaller) set. The log itself is never held in memory.</li>
+</ul>
+<h2 id="14-worked-example-certificate-expiry-checker">14. Worked Example: Certificate Expiry Checker<a class="headerlink" href="#14-worked-example-certificate-expiry-checker" title="Permanent link">&para;</a></h2>
+<p>Probe a list of hosts, compute days to certificate expiry, classify each, and fail if any is critical or unreachable. It is intended to run from cron and emit JSON for a monitoring system.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>// check_certs.weir
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>sandbox {
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>  mount system                       // openssl and date, /etc/ssl, resolver config
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>}
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>tool s_client {
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>  program "openssl"
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>  in host: string
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>  in port: int = 443
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>  args ["s_client", "-connect", "${host}:${port}", "-servername", host]
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>  takes none
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a>  yields text
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a>  ok_codes [0]
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a>}
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a>
+<a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a>tool x509_enddate {
+<a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a>  program "openssl"
+<a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a>  args ["x509", "-noout", "-enddate"]
+<a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a>  takes text
+<a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a>  yields text
+<a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a>  ok_codes [0]
+<a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a>}
+<a id="__codelineno-21-23" name="__codelineno-21-23" href="#__codelineno-21-23"></a>
+<a id="__codelineno-21-24" name="__codelineno-21-24" href="#__codelineno-21-24"></a>tool epoch_of {
+<a id="__codelineno-21-25" name="__codelineno-21-25" href="#__codelineno-21-25"></a>  program "date"
+<a id="__codelineno-21-26" name="__codelineno-21-26" href="#__codelineno-21-26"></a>  in stamp: string
+<a id="__codelineno-21-27" name="__codelineno-21-27" href="#__codelineno-21-27"></a>  args ["-u", "-d", stamp, "+%s"]
+<a id="__codelineno-21-28" name="__codelineno-21-28" href="#__codelineno-21-28"></a>  takes none
+<a id="__codelineno-21-29" name="__codelineno-21-29" href="#__codelineno-21-29"></a>  yields text
+<a id="__codelineno-21-30" name="__codelineno-21-30" href="#__codelineno-21-30"></a>}
+<a id="__codelineno-21-31" name="__codelineno-21-31" href="#__codelineno-21-31"></a>
+<a id="__codelineno-21-32" name="__codelineno-21-32" href="#__codelineno-21-32"></a>fn after_equals(line: string) -&gt; string {
+<a id="__codelineno-21-33" name="__codelineno-21-33" href="#__codelineno-21-33"></a>  return nth(of: split(text: line, on: "="), index: 1)
+<a id="__codelineno-21-34" name="__codelineno-21-34" href="#__codelineno-21-34"></a>}
+<a id="__codelineno-21-35" name="__codelineno-21-35" href="#__codelineno-21-35"></a>
+<a id="__codelineno-21-36" name="__codelineno-21-36" href="#__codelineno-21-36"></a>fn classify(left: duration, warn: duration, crit: duration) -&gt; string {
+<a id="__codelineno-21-37" name="__codelineno-21-37" href="#__codelineno-21-37"></a>  if left &lt;= crit { return "critical" }
+<a id="__codelineno-21-38" name="__codelineno-21-38" href="#__codelineno-21-38"></a>  if left &lt;= warn { return "warn" }
+<a id="__codelineno-21-39" name="__codelineno-21-39" href="#__codelineno-21-39"></a>  return "ok"
+<a id="__codelineno-21-40" name="__codelineno-21-40" href="#__codelineno-21-40"></a>}
+<a id="__codelineno-21-41" name="__codelineno-21-41" href="#__codelineno-21-41"></a>
+<a id="__codelineno-21-42" name="__codelineno-21-42" href="#__codelineno-21-42"></a>main flow check_certs {
+<a id="__codelineno-21-43" name="__codelineno-21-43" href="#__codelineno-21-43"></a>  in hosts: list&lt;string&gt;
+<a id="__codelineno-21-44" name="__codelineno-21-44" href="#__codelineno-21-44"></a>  in port: int = 443
+<a id="__codelineno-21-45" name="__codelineno-21-45" href="#__codelineno-21-45"></a>  in warn_within: duration = 21d
+<a id="__codelineno-21-46" name="__codelineno-21-46" href="#__codelineno-21-46"></a>  in fail_within: duration = 7d
+<a id="__codelineno-21-47" name="__codelineno-21-47" href="#__codelineno-21-47"></a>  out results: list&lt;{host: string, days: int?, state: string}&gt;
+<a id="__codelineno-21-48" name="__codelineno-21-48" href="#__codelineno-21-48"></a>
+<a id="__codelineno-21-49" name="__codelineno-21-49" href="#__codelineno-21-49"></a>  requires count(of: hosts) &gt; 0
+<a id="__codelineno-21-50" name="__codelineno-21-50" href="#__codelineno-21-50"></a>
+<a id="__codelineno-21-51" name="__codelineno-21-51" href="#__codelineno-21-51"></a>  var rows: list&lt;{host: string, days: int?, state: string}&gt; = []
+<a id="__codelineno-21-52" name="__codelineno-21-52" href="#__codelineno-21-52"></a>
+<a id="__codelineno-21-53" name="__codelineno-21-53" href="#__codelineno-21-53"></a>  for host in hosts {
+<a id="__codelineno-21-54" name="__codelineno-21-54" href="#__codelineno-21-54"></a>    probe as host {
+<a id="__codelineno-21-55" name="__codelineno-21-55" href="#__codelineno-21-55"></a>      let attempt = try s_client(host: host, port: port).x509_enddate()
+<a id="__codelineno-21-56" name="__codelineno-21-56" href="#__codelineno-21-56"></a>      if attempt.ok {
+<a id="__codelineno-21-57" name="__codelineno-21-57" href="#__codelineno-21-57"></a>        let stamp = after_equals(line: attempt.value)
+<a id="__codelineno-21-58" name="__codelineno-21-58" href="#__codelineno-21-58"></a>        let expiry = int(text: epoch_of(stamp: stamp))
+<a id="__codelineno-21-59" name="__codelineno-21-59" href="#__codelineno-21-59"></a>        let left = duration(seconds: expiry - now_epoch())
+<a id="__codelineno-21-60" name="__codelineno-21-60" href="#__codelineno-21-60"></a>        let state = classify(left: left, warn: warn_within, crit: fail_within)
+<a id="__codelineno-21-61" name="__codelineno-21-61" href="#__codelineno-21-61"></a>        rows = rows + [{host: host, days: left.days, state: state}]
+<a id="__codelineno-21-62" name="__codelineno-21-62" href="#__codelineno-21-62"></a>      } else {
+<a id="__codelineno-21-63" name="__codelineno-21-63" href="#__codelineno-21-63"></a>        rows = rows + [{host: host, days: absent, state: "unreachable"}]
+<a id="__codelineno-21-64" name="__codelineno-21-64" href="#__codelineno-21-64"></a>      }
+<a id="__codelineno-21-65" name="__codelineno-21-65" href="#__codelineno-21-65"></a>    }
+<a id="__codelineno-21-66" name="__codelineno-21-66" href="#__codelineno-21-66"></a>  }
+<a id="__codelineno-21-67" name="__codelineno-21-67" href="#__codelineno-21-67"></a>
+<a id="__codelineno-21-68" name="__codelineno-21-68" href="#__codelineno-21-68"></a>  set results = rows
+<a id="__codelineno-21-69" name="__codelineno-21-69" href="#__codelineno-21-69"></a>
+<a id="__codelineno-21-70" name="__codelineno-21-70" href="#__codelineno-21-70"></a>  let bad = rows
+<a id="__codelineno-21-71" name="__codelineno-21-71" href="#__codelineno-21-71"></a>    .filter(where: it.state == "critical" or it.state == "unreachable")
+<a id="__codelineno-21-72" name="__codelineno-21-72" href="#__codelineno-21-72"></a>    .count()
+<a id="__codelineno-21-73" name="__codelineno-21-73" href="#__codelineno-21-73"></a>  if bad &gt; 0 {
+<a id="__codelineno-21-74" name="__codelineno-21-74" href="#__codelineno-21-74"></a>    fail message: "${bad} certificate(s) critical or unreachable"
+<a id="__codelineno-21-75" name="__codelineno-21-75" href="#__codelineno-21-75"></a>  }
+<a id="__codelineno-21-76" name="__codelineno-21-76" href="#__codelineno-21-76"></a>}
+</code></pre></div>
+<p>Run forms:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>weir run check_certs.weir --hosts a.example.com --hosts b.example.com
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>weir run check_certs.weir --hosts a.example.com --json
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>weir run check_certs.weir --hosts a.example.com --out results
+</code></pre></div>
+<p>Points worth noting:</p>
+<ul>
+<li><code>try</code> around the pipeline means an unreachable host does not abort the loop, but the failure is still recorded and still produces a non-zero exit at the end. Tolerance is local and explicit; the final <code>fail</code> restores the default.</li>
+<li>With <code>--json</code>, a failing run still emits <code>results</code>, because <code>set results = rows</code> ran before <code>fail</code>. A monitoring system gets both the exit code 1 and the full table.</li>
+<li><code>probe as host</code> gives each iteration the identity <code>probe[i] "&lt;host&gt;"</code> in the plan, the log, and the <code>steps</code> array of the JSON output.</li>
+<li>The sandbox is just <code>mount system</code>. The flow touches no files of its own, and its tools have no <code>see</code> clause, so <code>openssl</code> and <code>date</code> see the system set, including <code>/etc/ssl</code>, <code>/etc/resolv.conf</code> and <code>/etc/hosts</code>, and nothing else. Their capability set is <code>{openssl, date}</code>. The network reach of <code>openssl</code> is not bounded by the sandbox (<a href="#75-not-covered">section 7.5</a>).</li>
+<li><code>classify</code> is a <code>fn</code>, so it is testable without stubs.</li>
+</ul>
+<h2 id="15-grammar-sketch">15. Grammar Sketch<a class="headerlink" href="#15-grammar-sketch" title="Permanent link">&para;</a></h2>
+<p>This is a sketch, not a complete grammar. Whitespace is insignificant except as a token separator; newlines terminate statements, and a line ending in <code>,</code>, an operator or an open bracket continues. Comments begin with <code>//</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="k">file        </span><span class="o">=</span> <span class="p">{</span> <span class="k">use_decl </span><span class="p">}</span> <span class="p">[</span> <span class="k">sandbox_block </span><span class="p">]</span> <span class="p">{</span> <span class="k">declaration </span><span class="p">}</span> <span class="p">;</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="k">use_decl    </span><span class="o">=</span> <span class="s2">"use"</span> <span class="k">string </span><span class="p">;</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="k">declaration </span><span class="o">=</span> <span class="k">flow </span><span class="p">|</span> <span class="k">tool </span><span class="p">|</span> <span class="k">fn </span><span class="p">|</span> <span class="k">test </span><span class="p">;</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="k">flow        </span><span class="o">=</span> <span class="p">[</span> <span class="s2">"main"</span> <span class="p">|</span> <span class="s2">"private"</span> <span class="p">]</span> <span class="s2">"flow"</span> <span class="k">ident </span><span class="s2">"{"</span> <span class="p">{</span> <span class="k">flow_item </span><span class="p">}</span> <span class="s2">"}"</span> <span class="p">;</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="k">flow_item   </span><span class="o">=</span> <span class="k">in_decl </span><span class="p">|</span> <span class="k">out_decl </span><span class="p">|</span> <span class="k">requires </span><span class="p">|</span> <span class="k">lock</span>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>            <span class="p">|</span> <span class="k">finally </span><span class="p">|</span> <span class="k">statement </span><span class="p">;</span>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="k">in_decl     </span><span class="o">=</span> <span class="s2">"in"</span> <span class="k">ident </span><span class="s2">":"</span> <span class="k">type </span><span class="p">[</span> <span class="s2">"="</span> <span class="k">expr </span><span class="p">]</span> <span class="p">;</span>
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="k">out_decl    </span><span class="o">=</span> <span class="s2">"out"</span> <span class="k">ident </span><span class="s2">":"</span> <span class="k">type </span><span class="p">;</span>
+<a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a><span class="k">sandbox_block  </span><span class="o">=</span> <span class="s2">"sandbox"</span> <span class="s2">"{"</span> <span class="p">{</span> <span class="k">in_decl </span><span class="p">|</span> <span class="k">mount </span><span class="p">}</span> <span class="s2">"}"</span> <span class="p">;</span>     <span class="cm">(* entry file only *)</span>
+<a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a><span class="k">mount       </span><span class="o">=</span> <span class="s2">"mount"</span> <span class="p">(</span> <span class="s2">"system"</span>
+<a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a>                      <span class="p">|</span> <span class="k">expr </span><span class="p">[</span> <span class="s2">"at"</span> <span class="k">expr </span><span class="p">]</span> <span class="p">(</span> <span class="s2">"ro"</span> <span class="p">|</span> <span class="s2">"rw"</span> <span class="p">)</span> <span class="p">)</span> <span class="p">;</span>
+<a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a><span class="k">see         </span><span class="o">=</span> <span class="s2">"see"</span> <span class="k">see_item </span><span class="p">;</span>                              <span class="cm">(* in a tool, one per line *)</span>
+<a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a><span class="k">see_item    </span><span class="o">=</span> <span class="s2">"system"</span> <span class="p">|</span> <span class="k">expr </span><span class="p">(</span> <span class="s2">"ro"</span> <span class="p">|</span> <span class="s2">"rw"</span> <span class="p">)</span> <span class="p">;</span>
+<a id="__codelineno-23-17" name="__codelineno-23-17" href="#__codelineno-23-17"></a><span class="k">requires    </span><span class="o">=</span> <span class="s2">"requires"</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a><span class="k">lock        </span><span class="o">=</span> <span class="s2">"lock"</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-19" name="__codelineno-23-19" href="#__codelineno-23-19"></a><span class="k">finally     </span><span class="o">=</span> <span class="s2">"finally"</span> <span class="k">block </span><span class="p">;</span>
+<a id="__codelineno-23-20" name="__codelineno-23-20" href="#__codelineno-23-20"></a>
+<a id="__codelineno-23-21" name="__codelineno-23-21" href="#__codelineno-23-21"></a><span class="k">tool      </span><span class="o">=</span> <span class="s2">"tool"</span> <span class="k">ident </span><span class="s2">"{"</span> <span class="p">{</span> <span class="k">tool_item </span><span class="p">}</span> <span class="s2">"}"</span> <span class="p">;</span>
+<a id="__codelineno-23-22" name="__codelineno-23-22" href="#__codelineno-23-22"></a><span class="k">tool_item </span><span class="o">=</span> <span class="s2">"program"</span> <span class="k">string</span>
+<a id="__codelineno-23-23" name="__codelineno-23-23" href="#__codelineno-23-23"></a>            <span class="p">|</span> <span class="k">in_decl</span>
+<a id="__codelineno-23-24" name="__codelineno-23-24" href="#__codelineno-23-24"></a>            <span class="p">|</span> <span class="s2">"args"</span> <span class="k">list_lit</span>
+<a id="__codelineno-23-25" name="__codelineno-23-25" href="#__codelineno-23-25"></a>            <span class="p">|</span> <span class="k">see</span>
+<a id="__codelineno-23-26" name="__codelineno-23-26" href="#__codelineno-23-26"></a>            <span class="p">|</span> <span class="s2">"env"</span> <span class="s2">"{"</span> <span class="p">{</span> <span class="k">ident </span><span class="s2">"="</span> <span class="k">expr </span><span class="p">}</span> <span class="s2">"}"</span>
+<a id="__codelineno-23-27" name="__codelineno-23-27" href="#__codelineno-23-27"></a>            <span class="p">|</span> <span class="s2">"takes"</span> <span class="k">io_kind</span>
+<a id="__codelineno-23-28" name="__codelineno-23-28" href="#__codelineno-23-28"></a>            <span class="p">|</span> <span class="s2">"yields"</span> <span class="k">io_kind</span>
+<a id="__codelineno-23-29" name="__codelineno-23-29" href="#__codelineno-23-29"></a>            <span class="p">|</span> <span class="s2">"ok_codes"</span> <span class="k">list_lit </span><span class="p">;</span>
+<a id="__codelineno-23-30" name="__codelineno-23-30" href="#__codelineno-23-30"></a><span class="k">io_kind     </span><span class="o">=</span> <span class="s2">"none"</span> <span class="p">|</span> <span class="s2">"lines"</span> <span class="p">|</span> <span class="s2">"text"</span> <span class="p">|</span> <span class="s2">"json"</span> <span class="p">;</span>
+<a id="__codelineno-23-31" name="__codelineno-23-31" href="#__codelineno-23-31"></a>
+<a id="__codelineno-23-32" name="__codelineno-23-32" href="#__codelineno-23-32"></a><span class="k">fn          </span><span class="o">=</span> <span class="s2">"fn"</span> <span class="k">ident </span><span class="s2">"("</span> <span class="p">[</span> <span class="k">params </span><span class="p">]</span> <span class="s2">")"</span> <span class="s2">"-&gt;"</span> <span class="k">type block </span><span class="p">;</span>
+<a id="__codelineno-23-33" name="__codelineno-23-33" href="#__codelineno-23-33"></a><span class="k">test        </span><span class="o">=</span> <span class="s2">"test"</span> <span class="k">string </span><span class="s2">"{"</span> <span class="p">{</span> <span class="k">test_item </span><span class="p">}</span> <span class="s2">"}"</span> <span class="p">;</span>
+<a id="__codelineno-23-34" name="__codelineno-23-34" href="#__codelineno-23-34"></a>
+<a id="__codelineno-23-35" name="__codelineno-23-35" href="#__codelineno-23-35"></a><span class="k">statement   </span><span class="o">=</span> <span class="k">let </span><span class="p">|</span> <span class="k">var </span><span class="p">|</span> <span class="k">assign </span><span class="p">|</span> <span class="k">set </span><span class="p">|</span> <span class="k">if </span><span class="p">|</span> <span class="k">if_let </span><span class="p">|</span> <span class="k">for </span><span class="p">|</span> <span class="k">try_stmt</span>
+<a id="__codelineno-23-36" name="__codelineno-23-36" href="#__codelineno-23-36"></a>            <span class="p">|</span> <span class="k">return </span><span class="p">|</span> <span class="k">fail </span><span class="p">|</span> <span class="k">within_block </span><span class="p">|</span> <span class="k">step </span><span class="p">|</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-37" name="__codelineno-23-37" href="#__codelineno-23-37"></a><span class="k">let         </span><span class="o">=</span> <span class="s2">"let"</span> <span class="k">ident </span><span class="p">[</span> <span class="s2">":"</span> <span class="k">type </span><span class="p">]</span> <span class="s2">"="</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-38" name="__codelineno-23-38" href="#__codelineno-23-38"></a><span class="k">var         </span><span class="o">=</span> <span class="s2">"var"</span> <span class="k">ident </span><span class="p">[</span> <span class="s2">":"</span> <span class="k">type </span><span class="p">]</span> <span class="s2">"="</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-39" name="__codelineno-23-39" href="#__codelineno-23-39"></a><span class="k">assign      </span><span class="o">=</span> <span class="k">ident </span><span class="s2">"="</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-40" name="__codelineno-23-40" href="#__codelineno-23-40"></a><span class="k">set         </span><span class="o">=</span> <span class="s2">"set"</span> <span class="k">ident </span><span class="s2">"="</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-41" name="__codelineno-23-41" href="#__codelineno-23-41"></a><span class="k">if          </span><span class="o">=</span> <span class="s2">"if"</span> <span class="k">expr block </span><span class="p">{</span> <span class="s2">"else"</span> <span class="s2">"if"</span> <span class="k">expr block </span><span class="p">}</span> <span class="p">[</span> <span class="s2">"else"</span> <span class="k">block </span><span class="p">]</span> <span class="p">;</span>
+<a id="__codelineno-23-42" name="__codelineno-23-42" href="#__codelineno-23-42"></a><span class="k">if_let      </span><span class="o">=</span> <span class="s2">"if"</span> <span class="s2">"let"</span> <span class="k">ident </span><span class="s2">"="</span> <span class="k">expr block </span><span class="p">[</span> <span class="s2">"else"</span> <span class="k">block </span><span class="p">]</span> <span class="p">;</span>
+<a id="__codelineno-23-43" name="__codelineno-23-43" href="#__codelineno-23-43"></a><span class="k">for         </span><span class="o">=</span> <span class="s2">"for"</span> <span class="k">ident </span><span class="s2">"in"</span> <span class="k">expr block </span><span class="p">;</span>
+<a id="__codelineno-23-44" name="__codelineno-23-44" href="#__codelineno-23-44"></a><span class="k">try_stmt    </span><span class="o">=</span> <span class="s2">"try"</span> <span class="k">block </span><span class="p">{</span> <span class="s2">"catch"</span> <span class="k">ident </span><span class="s2">":"</span> <span class="k">ident block </span><span class="p">}</span> <span class="p">;</span>
+<a id="__codelineno-23-45" name="__codelineno-23-45" href="#__codelineno-23-45"></a><span class="k">return      </span><span class="o">=</span> <span class="s2">"return"</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-46" name="__codelineno-23-46" href="#__codelineno-23-46"></a><span class="k">within_block </span><span class="o">=</span> <span class="s2">"within"</span> <span class="k">see_item </span><span class="p">{</span> <span class="s2">","</span> <span class="k">see_item </span><span class="p">}</span> <span class="s2">"{"</span> <span class="p">{</span> <span class="k">statement </span><span class="p">}</span> <span class="s2">"}"</span> <span class="p">;</span>   <span class="cm">(* a value when bound with let; see 7.3.1 *)</span>
+<a id="__codelineno-23-47" name="__codelineno-23-47" href="#__codelineno-23-47"></a><span class="k">fail        </span><span class="o">=</span> <span class="s2">"fail"</span> <span class="s2">"message"</span> <span class="s2">":"</span> <span class="k">expr </span><span class="p">;</span>
+<a id="__codelineno-23-48" name="__codelineno-23-48" href="#__codelineno-23-48"></a>
+<a id="__codelineno-23-49" name="__codelineno-23-49" href="#__codelineno-23-49"></a><span class="k">step        </span><span class="o">=</span> <span class="p">(</span> <span class="k">call </span><span class="p">|</span> <span class="k">ident </span><span class="s2">"{"</span> <span class="k">body </span><span class="s2">"}"</span> <span class="p">)</span> <span class="p">[</span> <span class="s2">"as"</span> <span class="k">expr </span><span class="p">]</span> <span class="p">{</span> <span class="k">modifier </span><span class="p">}</span> <span class="p">;</span>
+<a id="__codelineno-23-50" name="__codelineno-23-50" href="#__codelineno-23-50"></a><span class="k">modifier    </span><span class="o">=</span> <span class="s2">"when"</span> <span class="k">expr </span><span class="p">|</span> <span class="s2">"confirmable"</span> <span class="p">;</span>
+<a id="__codelineno-23-51" name="__codelineno-23-51" href="#__codelineno-23-51"></a>
+<a id="__codelineno-23-52" name="__codelineno-23-52" href="#__codelineno-23-52"></a><span class="k">expr        </span><span class="o">=</span> <span class="k">postfix </span><span class="p">;</span>
+<a id="__codelineno-23-53" name="__codelineno-23-53" href="#__codelineno-23-53"></a><span class="k">postfix     </span><span class="o">=</span> <span class="k">primary </span><span class="p">{</span> <span class="s2">"."</span> <span class="k">ident </span><span class="p">[</span> <span class="s2">"("</span> <span class="p">[</span> <span class="k">arg </span><span class="p">{</span> <span class="s2">","</span> <span class="k">arg </span><span class="p">}</span> <span class="p">]</span> <span class="s2">")"</span> <span class="p">]</span> <span class="p">}</span> <span class="p">;</span>
+<a id="__codelineno-23-54" name="__codelineno-23-54" href="#__codelineno-23-54"></a>                                             <span class="cm">(* with parens: a stage (native, tool or run);</span>
+<a id="__codelineno-23-55" name="__codelineno-23-55" href="#__codelineno-23-55"></a><span class="cm">                                                without: member access.</span>
+<a id="__codelineno-23-56" name="__codelineno-23-56" href="#__codelineno-23-56"></a><span class="cm">                                                A line starting with "." continues the previous one. *)</span>
+<a id="__codelineno-23-57" name="__codelineno-23-57" href="#__codelineno-23-57"></a><span class="k">primary     </span><span class="o">=</span> <span class="k">call </span><span class="p">|</span> <span class="k">ident </span><span class="p">|</span> <span class="k">literal </span><span class="p">|</span> <span class="s2">"("</span> <span class="k">expr </span><span class="s2">")"</span> <span class="p">|</span> <span class="k">if_expr </span><span class="p">|</span> <span class="k">within_block </span><span class="p">;</span>
+<a id="__codelineno-23-58" name="__codelineno-23-58" href="#__codelineno-23-58"></a><span class="k">if_expr     </span><span class="o">=</span> <span class="s2">"if"</span> <span class="k">expr block </span><span class="s2">"else"</span> <span class="p">(</span> <span class="k">block </span><span class="p">|</span> <span class="k">if_expr </span><span class="p">)</span> <span class="p">;</span>   <span class="cm">(* a value: each block ends in an expression *)</span>
+<a id="__codelineno-23-59" name="__codelineno-23-59" href="#__codelineno-23-59"></a><span class="k">call        </span><span class="o">=</span> <span class="p">[</span> <span class="s2">"try"</span> <span class="p">]</span> <span class="k">ident </span><span class="s2">"("</span> <span class="p">[</span> <span class="k">arg </span><span class="p">{</span> <span class="s2">","</span> <span class="k">arg </span><span class="p">}</span> <span class="p">]</span> <span class="s2">")"</span> <span class="p">;</span>
+<a id="__codelineno-23-60" name="__codelineno-23-60" href="#__codelineno-23-60"></a><span class="k">arg         </span><span class="o">=</span> <span class="k">ident </span><span class="s2">":"</span> <span class="k">expr </span><span class="p">|</span> <span class="s2">"..."</span> <span class="s2">"$"</span> <span class="k">ident </span><span class="p">;</span>
+<a id="__codelineno-23-61" name="__codelineno-23-61" href="#__codelineno-23-61"></a><span class="k">type        </span><span class="o">=</span> <span class="k">ident </span><span class="p">[</span> <span class="s2">"&lt;"</span> <span class="k">type </span><span class="p">{</span> <span class="s2">","</span> <span class="k">type </span><span class="p">}</span> <span class="s2">"&gt;"</span> <span class="p">]</span> <span class="p">[</span> <span class="s2">"?"</span> <span class="p">]</span>
+<a id="__codelineno-23-62" name="__codelineno-23-62" href="#__codelineno-23-62"></a>            <span class="p">|</span> <span class="s2">"{"</span> <span class="k">ident </span><span class="s2">":"</span> <span class="k">type </span><span class="p">{</span> <span class="s2">","</span> <span class="k">ident </span><span class="s2">":"</span> <span class="k">type </span><span class="p">}</span> <span class="s2">"}"</span> <span class="p">;</span>
+</code></pre></div>
+<p>Operator precedence, high to low: member access <code>.</code>, unary <code>not</code> and <code>-</code>, <code>*</code> <code>/</code> (arithmetic and path join), <code>+</code> <code>-</code>, comparison, <code>and</code>, <code>or</code>. Chaining with <code>.</code> binds tightest, as member access does.</p>
+<h2 id="16-reserved-words">16. Reserved Words<a class="headerlink" href="#16-reserved-words" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>absent       and          args         as           at           catch
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>confirmable  else         enum         env          expect       explicit
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>fail         false        finally      fixture      flow         fn
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>for          if           in           it           json         let
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>lines        lock         main         mount        none         not
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>ok_codes     or           out          private      program      requires
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>return       ro           run          rw           sandbox      secret
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>see          set          stub         system       takes        test
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a>text         tool         true         try          use          var
+<a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a>when         within       yields
+</code></pre></div>
+<p><code>it</code> is reserved in pipeline stage expressions only; elsewhere the checker rejects its use as a binding name to avoid ambiguity. Names in the error-type list (<code>ExecError</code>, <code>CapabilityError</code>, <code>IoError</code>, <code>ParseError</code>, <code>Timeout</code>) are reserved in type position.</p>
+<h2 id="17-comparison-to-other-tools">17. Comparison to Other Tools<a class="headerlink" href="#17-comparison-to-other-tools" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What Weir takes</th>
+<th>Where Weir differs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Nushell</strong></td>
+<td>Structured data through pipelines; commands as typed stages.</td>
+<td>Nushell is an interactive shell with a large command set. Weir has no shell mode, a small fixed set of native stages, and requires declared wrappers around external programs.</td>
+</tr>
+<tr>
+<td><strong>YSH / Oil</strong></td>
+<td>Explicit argument lists instead of re-parsed strings; errors that stop the script by default.</td>
+<td>YSH is a gradual migration path from bash and keeps the bash surface alongside the new one. Weir has no bash surface to fall back on.</td>
+</tr>
+<tr>
+<td><strong>PowerShell</strong></td>
+<td>Typed parameters, generated help, objects through pipelines.</td>
+<td>PowerShell is large, ambient-authority, and verb-noun heavy. Weir adds capability declarations and a purity-checked <code>fn</code>.</td>
+</tr>
+<tr>
+<td><strong>Amber</strong></td>
+<td>A language designed to be safer than bash, with failure handling forced on the author.</td>
+<td>Amber compiles to bash. Weir interprets directly, so there is no generated script to debug and no bash quoting underneath.</td>
+</tr>
+<tr>
+<td><strong>GitHub Actions</strong></td>
+<td>Typed inputs, named steps, declared outputs, reusable components with versions.</td>
+<td>Actions is YAML plus shell strings, with expression syntax embedded in strings and no static check of step bodies. Weir has an actual grammar, checks bodies, and is not tied to a CI runner.</td>
+</tr>
+</tbody>
+</table>
+<p>None of these is rejected as wrong. Weir is aimed at a narrower target: scripts where the cost of a mistake is high, where the author may be a model, and where the same file must run unattended.</p>
+<h2 id="18-implementation-notes">18. Implementation Notes<a class="headerlink" href="#18-implementation-notes" title="Permanent link">&para;</a></h2>
+<p>The reference implementation is intended to be written in Rust. File extension: <code>.weir</code>.</p>
+<ul>
+<li><strong>Single static binary.</strong> Rust produces one self-contained executable that can be copied to a host that has none of the toolchain, which matters for a tool that replaces bash on arbitrary hosts.</li>
+<li><strong>Hand-written recursive-descent parser.</strong> Parser generators give weak error messages and weak recovery. Since error quality is the product (<a href="#19-open-questions-and-known-weaknesses">section 19</a>), the parser is written by hand to control the spans, the expected-token lists, and recovery so that one mistake does not produce a cascade.</li>
+<li><strong>Direct process spawning.</strong> Commands are spawned with an argument vector and no shell. On Linux the interpreter enters the sandbox once, at startup of a run, by re-executing itself as a single-threaded stage (<code>weir __sandbox-run</code>) that creates the user, mount and PID namespaces, builds the declared mount table (plus the fixed <code>/tmp</code>, <code>/dev</code> and <code>/proc</code>), rebuilds the environment, calls <code>pivot_root</code>, and continues as the interpreter. The stage is needed because <code>unshare(CLONE_NEWUSER)</code> requires a single-threaded process. The release binary is statically linked (musl) so it needs nothing from the host once inside. As PID 1 of the new PID namespace the interpreter must reap orphaned children. Tools with a <code>see</code> clause start their program in a nested mount namespace. Namespace and mount calls go through <code>libc</code> or <code>nix</code>. Dependency discovery for <code>weir sandbox suggest</code> reads the ELF headers directly rather than invoking <code>ldd</code>, which executes the binary.</li>
+<li><strong>Alternative considered: Go.</strong> Equally capable of a static binary and quicker to write. Rust is preferred for the sum types and exhaustive matching that the checker's data model (types, capabilities, findings) benefits from. This is a preference, not a hard constraint, and the choice does not affect the language.</li>
+</ul>
+<h2 id="19-open-questions-and-known-weaknesses">19. Open Questions and Known Weaknesses<a class="headerlink" href="#19-open-questions-and-known-weaknesses" title="Permanent link">&para;</a></h2>
+<h3 id="191-no-training-data-so-error-messages-are-the-product">19.1 No training data, so error messages are the product<a class="headerlink" href="#191-no-training-data-so-error-messages-are-the-product" title="Permanent link">&para;</a></h3>
+<p>Weir does not exist, so no model has seen it. A model asked to write Weir will write something that looks like Rust, Python or bash, and get it wrong in ways particular to Weir. The language cannot rely on familiarity. It can only rely on the check pass saying exactly what is wrong and how to fix it, in a form a model can act on in one step (<code>fix</code> hints, stable codes, JSON output).</p>
+<p>This means error-message quality is a feature to be tested and measured, not polished at the end. A concrete proposal: before freezing the grammar, collect a set of plausible incorrect scripts written by models and people, run <code>weir check</code> on them, and revise the grammar or the messages wherever the fix hint does not lead to a correct script on the next attempt. Whether this works is unproven.</p>
+<p>The named-argument rule helps here (there are fewer ways to be wrong) but does not solve it.</p>
+<h3 id="192-language-surface-versus-simpler-than-bash">19.2 Language surface versus "simpler than bash"<a class="headerlink" href="#192-language-surface-versus-simpler-than-bash" title="Permanent link">&para;</a></h3>
+<p>The goal is a language simpler than bash for the target scripts. Counting the concepts in this document: four declarations, nine header or step modifiers, eleven types and forms, structured errors, a mandatory filesystem sandbox that the entry file defines mount by mount, with <code>see</code> narrowing in tools and an escape flag, a lockfile, a fixture system, and a native-stage vocabulary. That is not obviously smaller than bash plus a linter, and a reader could reasonably call it larger. Bash is bad, but it is small.</p>
+<p>The bet is that these concepts are each individually easy and rarely interact, and that the checker removes the need to learn the sharp edges. That is unverified. Candidates for removal if the surface proves too large: <code>lock</code> (a built-in could do it), <code>requires</code> (an <code>if ... fail</code> does the same), records as a distinct type (use maps), the <code>finally</code> block.</p>
+<h3 id="193-things-added-beyond-the-original-brief">19.3 Things added beyond the original brief<a class="headerlink" href="#193-things-added-beyond-the-original-brief" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Structural record types</strong> appear in the type table. They are needed for <code>count_by</code> output and parsed JSON, but they make Weir's type system larger than the "distinct types" list in the brief. An alternative is <code>map&lt;string, T&gt;</code> throughout, at the cost of heterogeneous rows.</li>
+<li><strong><code>set</code> for outputs and <code>try</code> as an attempt record</strong> are syntactic choices made here without much competition from alternatives.</li>
+<li><strong>The filesystem sandbox</strong> (<a href="#7-capabilities">section 7</a>) with a file-level <code>sandbox</code> block, host-to-inside remapping, and <code>see</code> clauses on tools are not in the original brief. They replace the brief's <code>needs read</code> and <code>needs write</code>, which Weir could only have enforced on its own built-ins. The sandbox also changes how <code>path</code> inputs behave on the command line.</li>
+<li><strong>Scoped <code>within</code> blocks</strong> (<a href="#731-scoped-within-blocks">section 7.3.1</a>) narrow the view for part of a flow and use <code>return</code> for a value. They are an addition after the first interpreter, not part of the original design.</li>
+<li><strong><code>$</code> in <code>...$list</code></strong> appears only in spread. Variables are otherwise bare. It is inconsistent and should probably be <code>...list</code>.</li>
+</ul>
+<h3 id="194-deferred-past-v1">19.4 Deferred past v1<a class="headerlink" href="#194-deferred-past-v1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Parallelism (concurrent steps or <code>for</code> iterations).</li>
+<li>Network capabilities (allowed hosts, ports).</li>
+<li>Sandbox refinements (<a href="#76-mechanism-and-availability">section 7.6</a>): overlayfs-backed <code>--plan</code> and commit-on-success, a Landlock backend where user namespaces are disabled, network namespaces.</li>
+<li>Sandbox support outside Linux (macOS, BSDs). v1 refuses to run a script that starts external programs where it cannot sandbox them, unless <code>--no-sandbox</code> is given.</li>
+<li>Windows support. The v1 design assumes POSIX semantics for signals, locks, and paths.</li>
+<li>A package index. Components come from paths, GitHub and Artifactory/Nexus only.</li>
+<li>Interactive use and a REPL.</li>
+<li>Declared timeouts on steps and commands (only <code>Timeout</code> as an error type is reserved).</li>
+<li>Resumable runs (re-running only failed steps).</li>
+<li>An editor language server, beyond the JSON output of <code>weir check</code>.</li>
+<li>Formal denial of <code>run(cmd: "bash", ...)</code>. It is only warned about in v1.</li>
+</ul>
+<h3 id="195-weaknesses-in-the-design-as-it-stands">19.5 Weaknesses in the design as it stands<a class="headerlink" href="#195-weaknesses-in-the-design-as-it-stands" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>--plan</code> cannot be complete.</strong> It does not execute commands, so any control flow depending on a command's output cannot be resolved. The plan shows both branches annotated with the condition, which can overstate what will happen. A plan is a conservative superset of effects, not a prediction. Whether this is useful enough in practice is open.</li>
+<li><strong>Dot chaining blurs stage and method.</strong> <code>.filter(...)</code> could be a native stage, a declared tool of the same name, or a future method on a type. Name resolution order must be fixed (declared tools shadowing natives is probably wrong) and the error for an unknown name must list candidates.</li>
+<li><strong>Pipeline early termination.</strong> Distinguishing "closed by <code>take</code>" from a real failure across platforms and programs is delicate. Some programs report a broken pipe with a distinct code, some with a message, some hang. This may need a per-tool declaration.</li>
+<li><strong><code>confirmable</code> semantics for dependent steps.</strong> If a later step depends on the skipped step's effect, running it is wrong. The current rule only skips the one step. A <code>needs_step</code> dependency or a rule that skips all later steps in the flow is needed.</li>
+<li><strong><code>fn</code> purity versus reading the clock.</strong> <code>now_epoch()</code> is not allowed in a <code>fn</code>, so time-dependent logic must be passed in as an argument. This is correct and mildly annoying.</li>
+<li><strong>Secrets in tools.</strong> <code>env { NAME = token }</code> is the only route for a secret to a program besides stdin. Some programs accept credentials only on argv. Those cannot be wrapped safely, and the design offers no answer beyond "write a wrapper".</li>
+<li><strong>Network is outside the capability model.</strong></li>
+<li><strong>The sandbox is Linux-only and may be unavailable.</strong> It depends on unprivileged user namespaces, which are disabled on some hardened hosts and forbidden in some containers. There the run exits 4 unless the operator chooses <code>--sandbox auto</code> or <code>off</code>, which work only for scripts without remapping mounts. macOS and the BSDs have no v1 sandbox, so any script that runs an external program is Linux-only in practice. For a language meant to replace bash everywhere, this is a significant limit. Whether to accept it, or to add a weaker non-Linux backend, is open.</li>
+<li><strong>Command-line paths are translated, not taken literally.</strong> An operator passes host paths and the script sees inside paths, so an error message that mentions a path must say which kind. A path that is not under any mount fails with exit 2 before the script starts. Translating paths in <code>list&lt;path&gt;</code> inputs and in paths embedded in other values (a URL, a config file) is not possible; a program given a host path inside a string will not find it.</li>
+<li><strong>The interpreter lives inside the sandbox it enforces.</strong> A bug that lets a script call a built-in on a path outside the mount table is not possible by construction, but a bug in the pre-sandbox stage (path translation, lockfile verification, secret reading) happens outside it and has host access. That stage is the part of the interpreter that must be small and audited.</li>
+<li><strong>Script-defined mounts are verbose and easy to get wrong.</strong> Programs need paths nobody thinks of: certificate stores, locale data, NSS modules, helper binaries, daemon sockets. Because the author lists the mounts, a missing one is the author's bug and shows up as a program failing to start or to find a library. <code>mount system</code>, the <code>E-SANDBOX-EXEC-UNREACHABLE</code> check and <code>weir sandbox suggest</code> are the mitigations. If authors find this too burdensome they will either mount broadly (a script cannot mount <code>/</code> at all, but <code>/usr</code>, <code>/etc</code> and <code>/var</code> are not so limited) or run with <code>--no-sandbox</code>, and the guarantee shrinks to nothing. Whether explicit mounts or automatic derivation yields better real-world sandboxs is open; the design chose explicit and records the alternative in section 7.6.</li>
+<li><strong>Fixtures are under-specified.</strong> Stubbing at the tool level does not test the real program's behaviour, and the fixture language for directory trees is only sketched.</li>
+<li><strong>Naming strictness has a cost.</strong> Named-only calls make short scripts noticeably longer than their bash equivalents. This may hurt adoption for one-liners, which are a large share of what bash is used for. A <code>weir -e</code> one-liner mode is not designed.</li>
+</ul>
+<h3 id="196-checker-rules-that-are-expensive-to-implement">19.6 Checker rules that are expensive to implement<a class="headerlink" href="#196-checker-rules-that-are-expensive-to-implement" title="Permanent link">&para;</a></h3>
+<p>Roughly in order of cost:</p>
+<ol>
+<li><strong>Explaining sandbox failures.</strong> The kernel reports <code>ENOENT</code>, <code>EROFS</code> or <code>EACCES</code>. The message must say which mount a path fell under (or that it fell under none), in terms of inside paths, with the host path alongside when it differs. Doing this for built-ins and for errors printed by external programs, which Weir can only see as text, is uneven. There is no static scope proof to implement: unlike per-operation scope checks, the sandbox needs no symbolic path reasoning, because anything outside a mount does not exist. The checker's sandbox rules are limited to <code>E-SANDBOX-EXEC-UNREACHABLE</code>, <code>E-SANDBOX-LOCK-UNSHARED</code>, <code>E-SANDBOX-NOT-ENTRY</code> and literal <code>see</code> checks.</li>
+<li><strong>Capability inference through the call graph</strong> with imports from remote components. It requires computing the manifest of each component without executing it, and it must handle recursion and diamond imports.</li>
+<li><strong>Pipeline element-type inference</strong> through generic stages with <code>it</code>. Requires bidirectional inference and good error messages when it fails, which is hard because the error appears far from the cause.</li>
+<li><strong><code>secret</code> flow analysis.</strong> Tracking that no expression derived from a <code>secret</code> reaches an argument list, an interpolation, a file write or an output. Has to follow values through <code>fn</code> returns and record fields.</li>
+<li><strong><code>W-DEFAULT-ARG</code> with constant folding.</strong> Detecting that an argument equals the default needs evaluation of constant expressions, including durations and path joins.</li>
+<li><strong>Exhaustiveness of <code>catch</code> and reachability of thrown types.</strong> Needs each built-in and each tool to declare which errors it may throw.</li>
+<li><strong>Dependency discovery for <code>weir sandbox suggest</code>.</strong> Reading ELF headers for <code>DT_NEEDED</code> entries, following <code>RPATH</code>/<code>RUNPATH</code> and the loader search path, resolving <code>#!</code> chains, and doing so identically to what the dynamic loader will do at run time. Anything loaded with <code>dlopen</code> is invisible and has to be found by the author. It is not on the run-time path, so a mistake costs a bad suggestion, not a wrong sandbox. The <code>E-SANDBOX-EXEC-UNREACHABLE</code> check is a smaller version of the same problem: resolving <code>program</code> through <code>PATH</code> and symlinks the way the runtime will.</li>
+<li><strong>Purity checking of <code>fn</code>.</strong> Cheap on its own, but must be re-run through every imported <code>fn</code> and built-in, so every built-in needs a purity annotation that stays correct.</li>
+</ol>
+<h3 id="197-questions-not-yet-decided">19.7 Questions not yet decided<a class="headerlink" href="#197-questions-not-yet-decided" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Should <code>use</code> allow importing a <code>fn</code> or <code>tool</code> on its own, or only flows? The manifest model currently assumes flows, but tools are the most reusable thing.</li>
+<li>How are exit codes from nested flow calls reflected in <code>--json</code> <code>steps</code>? One failure should not produce a confusing cascade of "failed" entries.</li>
+<li>Should a sandbox block be allowed to <code>include</code> a shared set of mounts from a component (a <code>mount web_server</code> preset), or is <code>mount system</code> the only built-in shorthand? Presets would cut repetition and add a fifth thing to define and import.</li>
+<li>Should <code>ok_codes</code> allow named meanings (for example, <code>grep</code> code 1 meaning "no match" and so <code>yields</code> an empty result), rather than only a list of numbers?</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      GNU General Public License v3.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.top", "content.code.copy", "content.action.edit", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
