@@ -1,0 +1,63 @@
+#!/usr/bin/env -S weir --run
+//
+// sign_release.weir: sign a release file with a private key, without letting anything else see the key.
+//
+//   ./sign_release.weir --run --dist ./dist --file app-1.2.tar.gz --keys ~/release-keys
+//
+// The key folder is an `explicit` mount. It is declared in the sandbox block like any other mount,
+// but it is not part of the default view: the script's built-ins, the `run` call and every filter
+// that does not ask for it cannot reach it. Only `sign` asks, with its `see keys ro` line, so
+// `openssl` is the one program that can read the key. Anything else the script starts has no
+// such folder, and `exists` on a key path says false.
+//
+// Both folders are sandbox inputs, so the host paths come from the command line (--dist, --keys)
+// and the flow sees them as /dist and /keys.
+
+sandbox {
+  in dist: path = "."                // host folder with the file to sign, --dist
+  in keys: path = "/etc/ssl/private" // host folder with the private keys, --keys
+  mount system
+  mount dist at "/dist" ro
+  mount keys at "/keys" ro explicit  // reached only by a `see` line or a `within` that names it
+}
+
+filter sign_sha256 {
+  program "openssl"
+  in key: path
+  in file: path
+  args ["dgst", "-sha256", "-sign", key, "-hex", file]
+  see system
+  see "/dist" ro
+  see "/keys" ro                     // the request: without this line the key is not there
+  takes none
+  yields lines
+}
+
+// "SHA256(app.tar.gz)= 3045..." -> "3045..."
+fn signature_of(line: string) -> string {
+  return trim(text: nth(of: split(text: line, on: "= "), index: 1))
+}
+
+main flow sign {
+  in dist: path                      // the sandbox's `dist`, as it appears inside: /dist
+  in keys: path                      // the sandbox's `keys`, as it appears inside: /keys
+  in file: string
+  in key_name: string = "release.key"
+  out signature: string
+
+  let key = path(text: "${keys}/${key_name}")
+
+  // The flow itself cannot see the key folder, which is the point.
+  if exists(path: key) {
+    fail message: "the key is visible to the script itself"
+  }
+
+  let result = sign_sha256(key: key, file: path(text: "${dist}/${file}"))
+  let hex = signature_of(line: first(of: result))
+  print(text: hex)
+  set signature = hex
+}
+
+test "signature_of takes the hex after the equals sign" {
+  expect signature_of(line: "SHA256(a.tar.gz)= 30450221") == "30450221"
+}

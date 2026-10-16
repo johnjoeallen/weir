@@ -1,0 +1,128 @@
+#!/usr/bin/env -S weir --run
+//
+// pg_backup.weir: dump PostgreSQL databases with daily, weekly and monthly copies.
+//
+//   WEIR_SECRET_PASSWORD=... ./pg_backup.weir --backup-dir /srv/backups \
+//     --host db.example.com --user backup --db app --db billing --keep-days 7
+//
+// A port of prodrigestivill/docker-postgres-backup-local's backup.sh. The dump is a
+// compressed custom-format file (pg_dump -Fc), so there is no `| gzip`. Each dump is
+// hard-linked as the daily, weekly and monthly copy, and old copies are removed with `find`.
+// Every external program is a filter: pg_dump, date, mkdir, ln and find.
+
+sandbox {
+  in backup_dir: path = "."          // host folder that holds last/, daily/, weekly/ and monthly/
+  mount system
+  mount backup_dir at "/backups" rw
+}
+
+filter pg_dump {
+  program "pg_dump"
+  in host: string
+  in port: int
+  in user: string
+  in db: string
+  in file: path
+  in password: secret
+  env {
+    PGPASSWORD = password
+  }
+  args ["--host", host, "--port", string(value: port), "--username", user, "--dbname", db, "--format", "custom", "--file", file]
+  see system
+  see "/backups" rw
+  takes none
+  yields none
+}
+
+// One call gives every name the backups need: "20261016-101500,20261016,202642,202610".
+filter stamps {
+  program "date"
+  args ["+%Y%m%d-%H%M%S,%Y%m%d,%G%V,%Y%m"]
+  see system
+  takes none
+  yields lines
+}
+
+filter make_dir {
+  program "mkdir"
+  in dir: path
+  args ["-p", "--", dir]
+  see system
+  see "/backups" rw
+  takes none
+  yields none
+}
+
+filter hard_link {
+  program "ln"
+  in from: path
+  in to: path
+  args ["-f", "--", from, to]
+  see system
+  see "/backups" rw
+  takes none
+  yields none
+}
+
+// Remove files in one folder that are older than `age`; `by` is find's "-mtime" (days) or "-mmin" (minutes).
+filter prune {
+  program "find"
+  in dir: path
+  in pattern: string
+  in by: string
+  in age: int
+  args [dir, "-maxdepth", "1", "-type", "f", "-name", pattern, by, "+${age}", "-delete"]
+  see system
+  see "/backups" rw
+  takes none
+  yields none
+}
+
+// "app-20261016.dump" for the daily copy of database "app".
+fn copy_name(db: string, stamp: string) -> string {
+  return "${db}-${stamp}.dump"
+}
+
+main flow backup {
+  in backup_dir: path
+  in db: list<string>
+  in host: string = "localhost"
+  in port: int = 5432
+  in user: string = "postgres"
+  in password: secret
+  in keep_minutes: int = 1440
+  in keep_days: int = 7
+  in keep_weeks: int = 4
+  in keep_months: int = 6
+  out written: int
+
+  let root = "/backups"
+  for kind in ["last", "daily", "weekly", "monthly"] {
+    make_dir(dir: path(text: "${root}/${kind}"))
+  }
+
+  var written_count = 0
+  for name in db {
+    let parts = split(text: first(of: stamps()), on: ",")
+    let last_file = path(text: "${root}/last/${copy_name(db: name, stamp: nth(of: parts, index: 0))}")
+
+    print(text: "dumping ${name} from ${host}")
+    pg_dump(host: host, port: port, user: user, db: name, file: last_file, password: password)
+
+    hard_link(from: last_file, to: path(text: "${root}/daily/${copy_name(db: name, stamp: nth(of: parts, index: 1))}"))
+    hard_link(from: last_file, to: path(text: "${root}/weekly/${copy_name(db: name, stamp: nth(of: parts, index: 2))}"))
+    hard_link(from: last_file, to: path(text: "${root}/monthly/${copy_name(db: name, stamp: nth(of: parts, index: 3))}"))
+
+    // old copies of this database only
+    prune(dir: path(text: "${root}/last"), pattern: "${name}-*.dump", by: "-mmin", age: keep_minutes)
+    prune(dir: path(text: "${root}/daily"), pattern: "${name}-*.dump", by: "-mtime", age: keep_days)
+    prune(dir: path(text: "${root}/weekly"), pattern: "${name}-*.dump", by: "-mtime", age: keep_weeks * 7)
+    prune(dir: path(text: "${root}/monthly"), pattern: "${name}-*.dump", by: "-mtime", age: keep_months * 31)
+    written_count = written_count + 1
+  }
+  set written = written_count
+}
+
+test "copies are named after the database and the stamp" {
+  expect copy_name(db: "app", stamp: "20261016") == "app-20261016.dump"
+}

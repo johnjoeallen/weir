@@ -608,7 +608,7 @@ main flow a {{
 
 #[test]
 fn the_bundled_examples_check_and_their_tests_pass() {
-    for name in ["commands.weir", "dpkgwatch.weir", "parse_access.weir"] {
+    for name in ["commands.weir", "dpkgwatch.weir", "parse_access.weir", "s3_sync.weir", "pg_backup.weir", "docker_rollout.weir", "sign_release.weir"] {
         let f = manifest(&format!("examples/{name}"));
         let c = weir_args(&["check", &f]);
         assert_eq!(c.code, 0, "{name}: {}{}", c.stdout, c.stderr);

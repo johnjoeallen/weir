@@ -1,0 +1,225 @@
+#!/usr/bin/env -S weir --run
+//
+// docker_rollout.weir: replace a Docker Compose service without downtime.
+//
+//   ./docker_rollout.weir --service web --file compose.yml --timeout 90
+//
+// A port of wowu/docker-rollout. It starts new containers next to the old ones, waits for them to be
+// healthy, then stops and removes the old ones; if the new ones never become healthy it removes them
+// and fails. Differences from the shell version:
+//   - the Docker socket is an `explicit` mount, so only the two filters that ask for it can reach it;
+//     the Docker daemon is root on the host, and nothing else in this script needs to see it;
+//   - the pre-stop hooks run one after another, where the shell version backgrounds them with `&`;
+//   - a compose file must be inside the project folder, which is mounted read-only at its own path
+//     (compose resolves relative paths in the file against it, and the daemon reads them on the host).
+
+sandbox {
+  in project: path = "."             // the folder with the compose file(s); --project changes it
+  mount system
+  mount project ro
+  mount "/run/docker.sock" at "/var/run/docker.sock" rw explicit
+}
+
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+// `docker <args>`
+filter docker {
+  program "docker"
+  in words: list<string>
+  args [...$words]
+  see system
+  see "/var/run/docker.sock" rw
+  takes none
+  yields lines
+}
+
+// `docker compose <global options> <subcommand>`; the global options come before the subcommand.
+filter compose {
+  program "docker"
+  in project: path
+  in global: list<string>
+  in words: list<string>
+  args ["compose", ...$global, ...$words]
+  see system
+  see project ro
+  see "/var/run/docker.sock" rw
+  takes none
+  yields lines
+}
+
+filter sleep_seconds {
+  program "sleep"
+  in seconds: int
+  args [string(value: seconds)]
+  see system
+  takes none
+  yields none
+}
+
+// 1, 2, ... n, one per line: a counted loop to poll in.
+filter count_to {
+  program "seq"
+  in n: int
+  args ["1", string(value: n)]
+  see system
+  takes none
+  yields lines
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+// The options that go before `compose`'s subcommand.
+fn global_args(files: list<string>, env_files: list<string>, project_name: string?, profiles: list<string>) -> list<string> {
+  var opts: list<string> = []
+  for f in files {
+    opts = [...$opts, "-f", f]
+  }
+  for e in env_files {
+    opts = [...$opts, "--env-file", e]
+  }
+  if let p = project_name {
+    opts = [...$opts, "--project-name", p]
+  }
+  for p in profiles {
+    opts = [...$opts, "--profile", p]
+  }
+  return opts
+}
+
+// Ids in `all` that are not in `running`.
+fn stopped_ids(all: list<string>, running: list<string>) -> list<string> {
+  return all.filter(where: not contains(items: running, item: it))
+}
+
+// Ids in `now` that are not in `before`.
+fn new_ids(now: list<string>, before: list<string>) -> list<string> {
+  return now.filter(where: not contains(items: before, item: it))
+}
+
+// `docker inspect --format={{json .State.Health.Status}}` prints the status in quotes.
+fn is_healthy(status: string) -> bool {
+  return status == "\"healthy\""
+}
+
+// ---------------------------------------------------------------------------
+// The flow
+// ---------------------------------------------------------------------------
+
+main flow rollout {
+  in project: path
+  in service: string
+  in file: list<string> = []
+  in env_file: list<string> = []
+  in project_name: string?
+  in profile: list<string> = []
+  in timeout: int = 60                // seconds to wait for a healthcheck
+  in wait: int = 10                   // seconds to wait when the service has no healthcheck
+  in wait_after_healthy: int = 0
+  in pre_stop_hook: string?           // a command to run in each old container; else the label docker-rollout.pre-stop-hook
+  out replaced: int
+
+  let global = global_args(files: file, env_files: env_file, project_name: project_name, profiles: profile)
+  let all = compose(project: project, global: global, words: ["ps", "-a", "--quiet", service])
+  let running = compose(project: project, global: global, words: ["ps", "--quiet", service])
+  let stopped = stopped_ids(all: all, running: running)
+
+  if count(of: all) == 0 {
+    print(text: "==> Service '${service}' is not running. Starting the service.")
+    compose(project: project, global: global, words: ["up", "--detach", "--no-recreate", service])
+    set replaced = 0
+  } else if count(of: stopped) > 0 {
+    print(text: "==> Service '${service}' has stopped containers. Replacing only those.")
+    docker(words: ["rm", ...$stopped])
+    compose(project: project, global: global, words: ["up", "--detach", "--no-recreate", service])
+    set replaced = count(of: stopped)
+  } else {
+    let scale = count(of: running)
+    print(text: "==> Scaling '${service}' to '${scale * 2}' instances")
+    compose(project: project, global: global, words: ["up", "--detach", "--scale", "${service}=${scale * 2}", "--no-recreate", service])
+
+    let fresh = new_ids(now: compose(project: project, global: global, words: ["ps", "--quiet", service]), before: running)
+    let probe = docker(words: ["inspect", "--format={{json .State.Health}}", first(of: fresh)])
+    let has_healthcheck = contains(text: join(items: probe, with: ""), part: "Status")
+
+    if has_healthcheck {
+      print(text: "==> Waiting for new containers to be healthy (timeout: ${timeout} seconds)")
+      var healthy = 0
+      for tick in count_to(n: timeout) {
+        if healthy != scale {
+          healthy = fresh
+            .map(to: first(of: docker(words: ["inspect", "--format={{json .State.Health.Status}}", it])))
+            .filter(where: is_healthy(status: it))
+            .count()
+          if healthy != scale {
+            sleep_seconds(seconds: 1)
+          }
+        }
+      }
+
+      if healthy != scale {
+        for id in fresh {
+          print(text: "==> Health check status for container ${id}")
+          print(text: join(items: docker(words: ["inspect", "--format={{json .State.Health}}", id]), with: "\n"))
+          print(text: "==> Logs for container ${id}")
+          print(text: join(items: docker(words: ["logs", id]), with: "\n"))
+        }
+        docker(words: ["stop", ...$fresh])
+        docker(words: ["rm", ...$fresh])
+        fail message: "New containers are not healthy. Rolled back."
+      }
+
+      if wait_after_healthy > 0 {
+        print(text: "==> Waiting for healthy containers to settle down (${wait_after_healthy} seconds)")
+        sleep_seconds(seconds: wait_after_healthy)
+      }
+    } else {
+      print(text: "==> Waiting for new containers to be ready (${wait} seconds)")
+      sleep_seconds(seconds: wait)
+    }
+
+    // The hook comes from the option, or from a label on the first old container.
+    var hook = ""
+    if let h = pre_stop_hook {
+      hook = h
+    } else {
+      hook = trim(text: join(items: docker(words: ["inspect", "--format={{index .Config.Labels \"docker-rollout.pre-stop-hook\"}}", first(of: running)]), with: ""))
+    }
+    if hook != "" {
+      print(text: "==> Running pre-stop hook: ${hook}")
+      for id in running {
+        docker(words: ["exec", id, "sh", "-c", hook])
+      }
+    }
+
+    print(text: "==> Stopping and removing old containers")
+    docker(words: ["stop", ...$running])
+    docker(words: ["rm", ...$running])
+    set replaced = scale
+  }
+}
+
+test "global options come before the subcommand, in order" {
+  let got = global_args(files: ["a.yml", "b.yml"], env_files: [".env"], project_name: "shop", profiles: ["prod"])
+  expect got == ["-f", "a.yml", "-f", "b.yml", "--env-file", ".env", "--project-name", "shop", "--profile", "prod"]
+}
+
+test "only ids missing from the running list are stopped" {
+  expect stopped_ids(all: ["a", "b", "c"], running: ["a", "c"]) == ["b"]
+  expect new_ids(now: ["a", "b", "x", "y"], before: ["a", "b"]) == ["x", "y"]
+}
+
+test "a healthcheck status arrives quoted" {
+  expect is_healthy(status: "\"healthy\"")
+  expect not is_healthy(status: "\"unhealthy\"")
+  expect not is_healthy(status: "\"starting\"")
+}
+
+test "a service that is not running is started" {
+  stub compose yields lines: []
+  let r = run rollout(project: path(text: "/tmp"), service: "web")
+  expect r.replaced == 0
+}
