@@ -276,7 +276,7 @@ pub fn build_mounts(f: &File, sandbox_ins: &HashMap<String, Value>, lenient: boo
     for mt in &sb.mounts {
         match &mt.spec {
             MountSpec::System => m.add_system(),
-            MountSpec::Path { host, at, mode } => {
+            MountSpec::Path { host, at, mode, explicit } => {
                 let hv = it.eval_with(host, &all).map_err(|e| format!("line {}: {}", mt.span.line, describe_ctl(&e)))?;
                 let host_s = match &hv {
                     Value::Str(s) | Value::Path(s) => s.to_string(),
@@ -293,7 +293,7 @@ pub fn build_mounts(f: &File, sandbox_ins: &HashMap<String, Value>, lenient: boo
                     return Err(format!("line {}: the inside path {inside_s:?} must be absolute", mt.span.line));
                 }
                 let host_abs = absolutize(&host_s);
-                m.add(&host_abs, &inside_s, *mode, "declared");
+                m.add_with(&host_abs, &inside_s, *mode, "declared", *explicit);
             }
         }
     }

@@ -304,9 +304,38 @@ sandbox {
 |------|---------|
 | `mount <host> at <inside> ro\|rw` | bind-mount the host folder or file at `<inside>` in the sandbox |
 | `mount <path> ro\|rw` | shorthand for `mount <path> at <path> ...`, the same path inside and out |
+| `mount <host> [at <inside>] ro\|rw explicit` | the same, but kept out of the default view: only a `see` line or a `within` header that names it reaches it ([section 7.1.1](#711-explicit-mounts)) |
 | `mount system` | the read-only **system set**, each at its own path: `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, and the files `/etc/ssl`, `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf`, `/etc/localtime` |
 
 All mounts are `nosuid` and `nodev`. A mount is a folder or a single file. Where mounts overlap, the more specific `<inside>` path wins. `mount system` is never implied.
+
+#### 7.1.1 Explicit mounts
+
+A mount marked `explicit` is part of the sandbox but not of its default view. The script's built-ins, a generic `run`, a filter with no `see` lines and a `within` block that does not name it cannot reach it. A program sees it only if its filter has a `see` line for it, or it runs inside a `within` block whose header names it. The mount must still be declared in the `sandbox` block, so the script lists everything it can ever reach, and a reader finds the request next to the mount.
+
+```weir
+sandbox {
+  mount system
+  mount "/run/docker.sock" rw explicit   // the Docker daemon: root on the host
+}
+
+filter docker {
+  program "docker"
+  in subcommand: list<string>
+  args [...$subcommand]
+  see system
+  see "/run/docker.sock" rw                 // the request
+  takes none
+  yields lines
+}
+```
+
+- **Specific requests only.** The request must name the explicit mount or a path inside it. A `see` or `within` naming a parent folder (`/run`) does not include it.
+- **Requests can only narrow.** The mount is still capped by its declared mode, and a nested `within` can name a explicit mount only if the enclosing view already does.
+- **Built-ins.** Outside a requesting `within` block, `read_text` and the others fail with a `CapabilityError` that names the mount, and `exists` returns `false`.
+- **Mechanism.** The mount is bound under a holding folder in the sandbox root that no program's view includes. Once a script has a explicit mount, every program starts in its own narrowed root (about 0.6 ms each, [section 7.3.1](#731-scoped-within-blocks)), cut down to the default view plus whatever it requests.
+- **A broader mount can undo it.** This applies to the mount path. If another mount exposes the same host folder (for example `mount "/run" rw` next to a explicit `/run/docker.sock`), that path is visible through the broader mount. The checker does not yet warn about this.
+- **Without a sandbox** (`--sandbox off`, or `auto` after a failure) no program is confined, so explicit mounts are enforced for built-ins only.
 
 **Host side and inside side.** `<host>` is a path on the machine running Weir. `<inside>` is the path the script sees. Using different values makes a script portable across hosts: the script refers only to `/data`, and the operator decides which host folder that is. The sandbox block may declare `in` values of type `path` for the host side, like a flow's inputs. They produce flags (`--logs /srv/nginx-logs`) and `--help` entries and are evaluated before the sandbox is entered. They exist only for the sandbox block; flows cannot read them, because after the sandbox is entered the host path is not meaningful to the script.
 
@@ -907,15 +936,15 @@ Operator precedence, high to low: member access `.`, unary `not` and `-`, `*` `/
 
 ```text
 absent       and          args         as           at           catch
-confirmable  else         enum         env          expect       false
-fail         filter       finally      fixture      flow         fn
-for          if           in           it           json         let
-lines        lock         main         mount        none         not
-ok_codes     or           out          private      program      requires
-return       ro           run          rw           sandbox      secret
-see          set          stub         system       takes        test
-text         true         try          use          var          when
-within       yields
+confirmable  else         enum         env          expect       explicit
+fail         false        filter       finally      fixture      flow
+fn           for          if           in           it           json
+let          lines        lock         main         mount        none
+not          ok_codes     or           out          private      program
+requires     return       ro           run          rw           sandbox
+secret       see          set          stub         system       takes
+test         text         true         try          use          var
+when         within       yields
 ```
 
 `it` is reserved in pipeline stage expressions only; elsewhere the checker rejects its use as a binding name to avoid ambiguity. Names in the error-type list (`ExecError`, `CapabilityError`, `IoError`, `ParseError`, `Timeout`) are reserved in type position.

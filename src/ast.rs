@@ -223,7 +223,7 @@ impl Mode {
 #[derive(Debug, Clone)]
 pub enum MountSpec {
     System,
-    Path { host: Expr, at: Option<Expr>, mode: Mode },
+    Path { host: Expr, at: Option<Expr>, mode: Mode, explicit: bool },
 }
 
 #[derive(Debug, Clone)]

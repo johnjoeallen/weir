@@ -30,11 +30,51 @@ filter nginx_test {
 ```
 
 The program sees only the paths listed there, and only those that the script's own
-`sandbox` block mounted. A filter with no `see` lines sees everything the script mounted.
+`sandbox` block mounted. A filter with no `see` lines sees everything the script mounted, except explicit mounts (below).
 A `see` line can only narrow: `see "/etc/nginx" rw` would be an error here, because the
 script mounts it read-only. Only the script you run has a `sandbox` block. A script it
 imports with `use` can't mount anything, so imported code never sees more than the
 script you run allows.
+
+## Mounts only a request can reach
+
+Some mounts are too powerful to give every program in the script, such as the Docker
+socket or a folder of keys. Mark them `explicit`:
+
+```weir
+sandbox {
+  mount system
+  mount "/etc/ssl/private" ro explicit
+}
+```
+
+A explicit mount is still declared in the `sandbox` block, but it isn't part of the
+default view. The script's built-ins, a generic `run`, and a filter with no `see` lines
+can't reach it: for a program it is simply missing, for a built-in it is a
+`CapabilityError` that names the mount, and `exists` says `false`. A program sees it
+only if its filter says so, or it runs in a `within` block that does:
+
+```weir
+filter sign {
+  program "openssl"
+  in file: path
+  args ["dgst", "-sha256", "-sign", "/etc/ssl/private/release.key", file]
+  see system
+  see "/etc/ssl/private" ro      // the request
+  takes none
+  yields lines
+}
+```
+
+The request has to name the mount or a path inside it. `see "/etc/ssl" ro` or a
+`within` for the parent folder doesn't include it. A request can't widen the mode, so
+a `ro` mount stays `ro`.
+
+Once a script has a explicit mount, every program it starts gets its own narrowed
+view, which costs about 0.6 ms per program. One caveat: restriction applies to the
+mount path. If another mount exposes the same host folder, the folder is visible
+there. Without a sandbox (`--sandbox off`) programs aren't confined at all, so only
+built-ins honour `explicit`.
 
 ## How it is enforced
 

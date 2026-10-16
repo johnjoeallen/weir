@@ -119,17 +119,26 @@ impl View {
         self.paths.iter().any(|(base, mode)| is_under(&p, base) && (*mode == Mode::Rw || !write))
     }
 
+    /// Does this view name the explicit mount at `mount` (or a path inside it)? Naming a parent folder does not.
+    fn requests(&self, mount: &str) -> bool {
+        self.paths.iter().any(|(base, _)| is_under(base, mount))
+    }
+
     /// What a program started inside this view sees: this view, cut down to a filter's own `see` lines.
-    fn narrow_to(&self, filter: Option<(Vec<(String, Mode)>, bool)>) -> (Vec<(String, Mode)>, bool) {
+    /// A explicit mount is in the result only if both the view and the filter name it.
+    fn narrow_to(&self, filter: Option<(Vec<(String, Mode)>, bool)>, explicit: &[String]) -> (Vec<(String, Mode)>, bool) {
         let Some((fpaths, fsystem)) = filter else {
             return (self.paths.clone(), self.system);
+        };
+        let both_name = |path: &str, fp: &str, vp: &str| {
+            explicit.iter().all(|r| !is_under(path, r) || (is_under(fp, r) && is_under(vp, r)))
         };
         let mut out: Vec<(String, Mode)> = Vec::new();
         for (fp, fm) in &fpaths {
             for (vp, vm) in &self.paths {
-                if is_under(vp, fp) {
+                if is_under(vp, fp) && both_name(vp, fp, vp) {
                     out.push((vp.clone(), narrower(*fm, *vm)));
-                } else if is_under(fp, vp) {
+                } else if is_under(fp, vp) && both_name(fp, fp, vp) {
                     out.push((fp.clone(), narrower(*fm, *vm)));
                 }
             }
@@ -244,6 +253,15 @@ impl Interp {
                 format!("cannot {op} {inside}: it is outside every mount, so it does not exist in the sandbox\nmounts:\n{}", self.mounts.describe().trim_end()),
             )),
             Some((m, host)) => {
+                if self.explicit_blocks(m) {
+                    return Err(throw(
+                        "CapabilityError",
+                        format!(
+                            "cannot {op} {inside}: it is on the explicit mount {}, which only a filter's `see` line or a `within` block that names it can reach",
+                            m.inside
+                        ),
+                    ));
+                }
                 if let Some(v) = self.views.last() {
                     if !v.allows(inside, write) {
                         return Err(throw(
@@ -726,6 +744,32 @@ impl Interp {
         }
     }
 
+    /// Is this explicit mount out of reach here, because no enclosing `within` block names it?
+    fn explicit_blocks(&self, m: &crate::mounts::MountEntry) -> bool {
+        m.explicit && !self.views.last().is_some_and(|v| v.requests(&m.inside))
+    }
+
+    fn explicit_insides(&self) -> Vec<String> {
+        self.mounts.entries.iter().filter(|e| e.explicit).map(|e| e.inside.clone()).collect()
+    }
+
+    /// (inside path, where the sandbox holds it) for each explicit mount.
+    fn explicit_pairs(&self) -> Vec<(String, String)> {
+        self.mounts.entries.iter().filter(|e| e.explicit).map(|e| (e.inside.clone(), e.host.clone())).collect()
+    }
+
+    /// What a program sees when nothing narrows it further: the system set and every mount that is not explicit.
+    fn default_view(&self) -> (Vec<(String, Mode)>, bool) {
+        let paths = self
+            .mounts
+            .entries
+            .iter()
+            .filter(|e| e.origin == "declared" && !e.explicit)
+            .map(|e| (e.inside.clone(), e.mode))
+            .collect();
+        (paths, self.mounts.is_system_mounted())
+    }
+
     /// Evaluate a `within` header into a view, refusing anything the enclosing view does not have.
     fn build_view(&mut self, items: &[(See, Span)], line: u32, frame: &mut Frame) -> R<View> {
         let mut view = View { system: false, paths: vec![], line };
@@ -744,6 +788,15 @@ impl Interp {
                 See::Path { path, mode } => {
                     let p = normalize(&self.eval(path, frame)?.display());
                     let write = *mode == Mode::Rw;
+                    // A explicit mount can be requested from the script's top level, or from a view that already requested it.
+                    if let Some((m, _)) = self.mounts.find(&p) {
+                        if m.explicit && self.views.last().is_some_and(|v| !v.requests(&m.inside)) {
+                            return Err(throw(
+                                "CapabilityError",
+                                format!("a `within` block asks for the explicit mount {}, which the enclosing view does not include", m.inside),
+                            ));
+                        }
+                    }
                     let ok = match self.views.last() {
                         Some(v) => v.allows(&p, write),
                         None => matches!(self.mounts.find(&p), Some((m, _)) if !(m.mode == Mode::Ro && write)),
@@ -1004,7 +1057,7 @@ impl Interp {
                 // A path outside the mounts, or outside the enclosing `within` view, does not exist.
                 let visible = self.views.last().is_none_or(|v| v.allows(&p, false));
                 Ok(Value::Bool(match self.mounts.find(&p) {
-                    Some((_, host)) if visible => std::path::Path::new(&host).exists(),
+                    Some((m, host)) if visible && !self.explicit_blocks(m) => std::path::Path::new(&host).exists(),
                     _ => false,
                 }))
             }
@@ -1293,11 +1346,16 @@ impl Interp {
         cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let narrow = match self.views.last() {
-            Some(v) => Some(v.narrow_to(narrow)),
+            Some(v) => Some(v.narrow_to(narrow, &self.explicit_insides())),
             None => narrow,
         };
+        // With a explicit mount in the sandbox, every program is cut down to the default view, which leaves it out.
+        let narrow = match narrow {
+            None if self.mounts.has_explicit() => Some(self.default_view()),
+            n => n,
+        };
         if let (true, Some((sees, system))) = (self.sandboxed, narrow) {
-            crate::sandbox::narrow(&mut cmd, sees, system);
+            crate::sandbox::narrow(&mut cmd, sees, system, self.explicit_pairs());
         }
         let mut child = cmd.spawn().map_err(|e| {
             let why = match e.kind() {

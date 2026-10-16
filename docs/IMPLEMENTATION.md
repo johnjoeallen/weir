@@ -2,7 +2,7 @@
 
 This describes the reference interpreter in `src/`, measured against [DESIGN.md](DESIGN.md). It is Rust with no dependencies, and Linux is the only platform on which it has been run.
 
-Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 29 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
+Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 30 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
 
 ## What is built
 
@@ -20,6 +20,7 @@ Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 29 integration tests
 | 11. CLI | Flags generated from inputs, `--help`, `--confirm`, `--plan`, `--json`, `--out`, secrets from `WEIR_SECRET_<NAME>`, `--secret-file` (mode checked) and `--secret-stdin`; a secret on argv is exit 2. |
 | 12. Testing | `fixture dir`, `stub`, `expect`, `run <flow>(...)`. |
 | 7.3.1 Scoped views | `within <items> { ... }` as a statement or a value, `return`, nesting by intersection, built-ins held to the view (`exists` is `false`), `E-WITHIN-NO-RETURN`, `E-FN-IMPURE`. A filter writes `see` lines directly; the old `sandbox { see }` form in a filter is `E-FILTER-SANDBOX`. |
+| 7.1.1 Explicit mounts | `mount ... explicit`: held out of the default view, reached only by a `see` line or `within` header that names it. Built-ins get a `CapabilityError` (`exists` is `false`). |
 | 15, 16. Grammar, reserved words | As sketched, plus the additions below. |
 
 Checker rules beyond those named above: unknown names, calls, stages and arguments with "did you mean" hints; missing, duplicate and unknown arguments; literal argument and default type mismatches; `it` outside a stage; assignment to a `let`; optional values used without `if let`; `secret` values used outside `env`/stdin; `fn` purity; `requires` purity; `W-SHELL-STRING`, `W-DESTRUCTIVE-PROGRAM`, `E-DYNAMIC-CMD`; filters that cannot start or join a pipeline; `catch` of a name that is not an error type. A failed import suppresses the follow-on "unknown name" errors it would cause.
@@ -61,6 +62,7 @@ These are the places a reader of the design could reasonably have expected somet
 19. **A `within` block builds one narrowed root per program,** not one per block. It costs about 0.6 ms per program (200 `run` calls: 0.18 s inside a block, 0.05 s outside), so sharing a root through `setns` was not worth the complexity. An item in a filter's own `see` lines is cut down to the view by intersection; `system` only if both have it.
 
 20. **`--sandbox auto` probes first.** Falling back after the real `enter` has failed is not possible: `unshare(CLONE_NEWPID)` has by then changed what this process's children become, and a failure in the child comes too late. So `auto` forks a throwaway child that builds and pivots into an empty root and reports the reason through a pipe (`sandbox::probe`, about a millisecond). Only if that succeeds does the real `enter` run, and `required` skips the probe.
+21. **Explicit mounts are bound under `/.weir-explicit/N`,** not at their inside path, so a recursive bind of a parent folder cannot carry them along. With any explicit mount, every program is started in a narrowed root (the default view, or its own `see` lines, or the `within` view) and the narrowing translates a requested inside path back to the holding path. The interpreter's mount table maps a explicit entry's host side to the holding path, so built-ins that are allowed (inside a requesting `within`) work unchanged. Open: no warning yet when a broader mount exposes the same host folder.
 
 ## Known limits of the sandbox
 

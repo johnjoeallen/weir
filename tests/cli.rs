@@ -288,6 +288,81 @@ main flow a {{
 }
 
 #[test]
+fn explicit_mount_is_reached_only_by_request() {
+    let base = scratch().join(format!("weir-explicit-it-{}", std::process::id()));
+    let open = base.join("open");
+    let vault = base.join("vault");
+    std::fs::create_dir_all(&open).unwrap();
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(open.join("a.txt"), "plain\n").unwrap();
+    std::fs::write(vault.join("key.txt"), "vault-content\n").unwrap();
+    let src = format!(
+        r#"sandbox {{
+  mount system
+  mount "{o}" ro
+  mount "{v}" at "{iv}" ro explicit
+}}
+filter sh_default {{
+  program "sh"
+  in script: string
+  args ["-c", script]
+  yields lines
+  ok_codes [0, 1, 2]
+}}
+filter sh_asks {{
+  program "sh"
+  in script: string
+  args ["-c", script]
+  see system
+  see "{iv}" ro
+  yields lines
+  ok_codes [0, 1, 2]
+}}
+main flow a {{
+  out by_default: list<string>
+  out asked: list<string>
+  out within_run: string
+  out builtin: string
+  out exists_top: bool
+  out parent_only: bool
+  set by_default = sh_default(script: "cat {o}/a.txt 2>&1; cat {iv}/key.txt 2>&1; ls /.weir-explicit 2>&1")
+  set asked = sh_asks(script: "cat {iv}/key.txt 2>&1")
+  set within_run = within system, "{iv}" ro {{
+    return first(of: run(cmd: "cat", args: ["{iv}/key.txt"]))
+  }}
+  set exists_top = exists(path: path(text: "{iv}/key.txt"))
+  set parent_only = within system, "{o}" ro {{
+    return exists(path: path(text: "{iv}/key.txt"))
+  }}
+  try {{
+    read_text(file: path(text: "{iv}/key.txt"))
+    set builtin = "read"
+  }} catch e: CapabilityError {{
+    set builtin = e.message
+  }}
+}}
+"#,
+        o = open.display(),
+        v = vault.display(),
+        iv = format!("{}/vault", open.display())
+    );
+    let p = script(&src);
+    let o = weir_args(&["run", s(&p), "--json"]);
+    if o.code == 4 {
+        eprintln!("skipped: this host cannot create the sandbox: {}", o.stderr.trim());
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    // a program that asks for nothing sees the ordinary mount but not the explicit one, nor where it is held
+    assert!(o.stdout.contains("plain"), "{}", o.stdout);
+    assert_eq!(o.stdout.matches("vault-content").count(), 2, "only the two requests may read it: {}", o.stdout);
+    assert!(o.stdout.contains("No such file"), "{}", o.stdout);
+    assert!(o.stdout.contains("explicit mount"), "{}", o.stdout);
+    assert!(o.stdout.contains("\"exists_top\": false"), "{}", o.stdout);
+    assert!(o.stdout.contains("\"parent_only\": false"), "naming a parent must not request it: {}", o.stdout);
+}
+
+#[test]
 fn sandbox_exit_code_and_cleanup() {
     let p = script("sandbox {\n  mount system\n}\nmain flow a {\n  fail message: \"inside\"\n}\n");
     let o = weir_args(&["run", s(&p)]);

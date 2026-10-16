@@ -9,7 +9,14 @@ pub struct MountEntry {
     pub mode: Mode,
     /// "declared", "system" or "fixed"
     pub origin: &'static str,
+    /// Not part of the default view: only a `see` line or a `within` header that names it reaches it.
+    pub explicit: bool,
+    /// Where a explicit mount is held inside the sandbox, out of every program's default view.
+    pub hidden: Option<String>,
 }
+
+/// A explicit mount is bound under this folder in the sandbox root, which no program's view includes.
+pub const EXPLICIT_DIR: &str = "/.weir-explicit";
 
 #[derive(Debug, Clone, Default)]
 pub struct Mounts {
@@ -50,7 +57,16 @@ fn under(path: &str, root: &str) -> bool {
 
 impl Mounts {
     pub fn add(&mut self, host: &str, inside: &str, mode: Mode, origin: &'static str) {
-        self.entries.push(MountEntry { host: normalize(host), inside: normalize(inside), mode, origin });
+        self.add_with(host, inside, mode, origin, false);
+    }
+
+    pub fn add_with(&mut self, host: &str, inside: &str, mode: Mode, origin: &'static str, explicit: bool) {
+        let hidden = explicit.then(|| format!("{EXPLICIT_DIR}/{}", self.entries.iter().filter(|e| e.explicit).count()));
+        self.entries.push(MountEntry { host: normalize(host), inside: normalize(inside), mode, origin, explicit, hidden });
+    }
+
+    pub fn has_explicit(&self) -> bool {
+        self.entries.iter().any(|e| e.explicit)
     }
 
     pub fn add_system(&mut self) {
@@ -135,7 +151,14 @@ impl Mounts {
             entries: self
                 .entries
                 .iter()
-                .map(|e| MountEntry { host: e.inside.clone(), inside: e.inside.clone(), mode: e.mode, origin: e.origin })
+                .map(|e| MountEntry {
+                    host: e.hidden.clone().unwrap_or_else(|| e.inside.clone()),
+                    inside: e.inside.clone(),
+                    mode: e.mode,
+                    origin: e.origin,
+                    explicit: e.explicit,
+                    hidden: e.hidden.clone(),
+                })
                 .collect(),
         }
     }
@@ -143,10 +166,11 @@ impl Mounts {
     pub fn describe(&self) -> String {
         let mut out = String::new();
         for e in &self.entries {
-            if e.host == e.inside {
-                out.push_str(&format!("  {} {}  ({})\n", e.inside, e.mode.word(), e.origin));
+            let tag = if e.explicit { ", explicit" } else { "" };
+            if e.host == e.inside || e.hidden.is_some() && e.hidden.as_deref() == Some(e.host.as_str()) {
+                out.push_str(&format!("  {} {}  ({}{tag})\n", e.inside, e.mode.word(), e.origin));
             } else {
-                out.push_str(&format!("  {} <- {} {}  ({})\n", e.inside, e.host, e.mode.word(), e.origin));
+                out.push_str(&format!("  {} <- {} {}  ({}{tag})\n", e.inside, e.host, e.mode.word(), e.origin));
             }
         }
         if out.is_empty() {

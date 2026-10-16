@@ -29,7 +29,7 @@ mod other {
         Err("the filesystem sandbox needs Linux namespaces and is not available on this platform".into())
     }
 
-    pub fn narrow(_cmd: &mut Command, _sees: Vec<(String, Mode)>, _system: bool) {}
+    pub fn narrow(_cmd: &mut Command, _sees: Vec<(String, Mode)>, _system: bool, _explicit: Vec<(String, String)>) {}
 
     pub fn probe() -> Result<(), String> {
         Err("the filesystem sandbox needs Linux namespaces and is not available on this platform".into())
@@ -365,7 +365,7 @@ mod linux {
                 .entries
                 .iter()
                 .filter(|e| e.origin != "fixed")
-                .map(|e| Bind { src: e.host.clone(), inside: e.inside.clone(), mode: e.mode, optional: e.origin == "system" })
+                .map(|e| Bind { src: e.host.clone(), inside: e.hidden.clone().unwrap_or_else(|| e.inside.clone()), mode: e.mode, optional: e.origin == "system" })
                 .collect();
 
             use std::io::Write as _;
@@ -533,7 +533,7 @@ mod linux {
 
     /// Narrow what one program sees (a filter's `see` lines, or the view of a `within` block): the program starts in
     /// a nested mount namespace holding only the listed inside paths. Call only inside the sandbox.
-    pub fn narrow(cmd: &mut Command, sees: Vec<(String, Mode)>, system: bool) {
+    pub fn narrow(cmd: &mut Command, sees: Vec<(String, Mode)>, system: bool, explicit: Vec<(String, String)>) {
         let mut binds: Vec<Bind> = Vec::new();
         if system {
             for p in SYSTEM_SET {
@@ -541,7 +541,12 @@ mod linux {
             }
         }
         for (p, m) in sees {
-            binds.push(Bind { src: p.clone(), inside: p, mode: m, optional: false });
+            // A explicit mount is held out of the root's view, so its source is the holding path.
+            let src = explicit
+                .iter()
+                .find(|(inside, _)| p == *inside || p.strip_prefix(inside.as_str()).is_some_and(|r| r.starts_with('/')))
+                .map_or_else(|| p.clone(), |(inside, hidden)| format!("{hidden}{}", &p[inside.len()..]));
+            binds.push(Bind { src, inside: p, mode: m, optional: false });
         }
         // `pre_exec` can only carry an errno back to the parent, so the reason is written to a
         // copy of the original stderr (close-on-exec) taken before the command redirects its own.

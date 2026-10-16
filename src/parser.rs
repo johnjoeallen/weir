@@ -6,7 +6,7 @@ use crate::diag::Diag;
 use crate::lexer::{lex, StrPart, Tok, Token};
 
 pub const RESERVED: &[&str] = &[
-    "absent", "and", "args", "as", "at", "catch", "confirmable", "else", "enum", "env", "expect", "false", "fail",
+    "absent", "and", "args", "as", "at", "catch", "confirmable", "else", "enum", "env", "expect", "explicit", "false", "fail",
     "filter", "finally", "fixture", "flow", "fn", "for", "if", "in", "it", "json", "let", "lines", "lock", "main",
     "mount", "none", "not", "ok_codes", "or", "out", "private", "program", "requires", "return", "ro", "run", "rw",
     "sandbox", "secret", "see", "set", "stub", "system", "takes", "test", "text", "true", "try", "use", "var", "when", "within",
@@ -256,7 +256,8 @@ impl Parser {
                     let host = self.expr()?;
                     let at = if self.eat_kw("at") { Some(self.expr()?) } else { None };
                     let mode = self.mode()?;
-                    b.mounts.push(Mount { spec: MountSpec::Path { host, at, mode }, span: sp });
+                    let explicit = self.eat_kw("explicit");
+                    b.mounts.push(Mount { spec: MountSpec::Path { host, at, mode, explicit }, span: sp });
                 }
             } else {
                 return Err(self.unexpected("`in` or `mount`"));

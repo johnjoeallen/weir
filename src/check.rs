@@ -109,7 +109,7 @@ fn static_mounts(f: &File) -> StaticMounts {
                         m.known.push((p.to_string(), Mode::Ro));
                     }
                 }
-                MountSpec::Path { host, at, mode } => {
+                MountSpec::Path { host, at, mode, .. } => {
                     let inside = match at {
                         Some(a) => literal_str(a),
                         None => literal_str(host),
