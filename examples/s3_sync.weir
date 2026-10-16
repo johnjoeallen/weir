@@ -1,0 +1,84 @@
+#!/usr/bin/env -S weir --run
+//
+// s3_sync.weir: sync a folder to an S3 bucket.
+//
+//   WEIR_SECRET_ACCESS_KEY_ID=... WEIR_SECRET_SECRET_ACCESS_KEY=... \
+//     ./s3_sync.weir --source ./public --bucket my-bucket --dest site --delete
+//
+// A port of jakejarvis/s3-sync-action's entrypoint.sh (56 lines of sh). Differences:
+//   - the four "X is not set. Quitting." checks are required inputs;
+//   - the keys reach `aws` only through its environment, so the script no longer writes them
+//     to ~/.aws and overwrites them afterwards;
+//   - `aws` sees the source folder read-only and nothing else of the host's disk.
+
+sandbox {
+  in source: path = "/tmp"           // host folder to upload, --source
+  mount system
+  mount source at "/source" ro
+}
+
+filter aws_sync {
+  program "aws"
+  in bucket: string
+  in dest: string
+  in region: string
+  in extra: list<string>
+  in access_key_id: secret
+  in secret_access_key: secret
+  env {
+    AWS_ACCESS_KEY_ID = access_key_id
+    AWS_SECRET_ACCESS_KEY = secret_access_key
+    AWS_DEFAULT_REGION = region
+  }
+  args ["s3", "sync", "/source", "s3://${bucket}/${dest}", "--no-progress", ...$extra]
+  see system
+  see "/source" ro
+  takes none
+  yields lines
+}
+
+// The options after the fixed ones. Pure, so a test can call it.
+fn extra_args(endpoint: string?, delete: bool) -> list<string> {
+  var extra: list<string> = []
+  if let e = endpoint {
+    extra = ["--endpoint-url", e]
+  }
+  if delete {
+    extra = [...$extra, "--delete"]
+  }
+  return extra
+}
+
+main flow sync {
+  in bucket: string
+  in dest: string = ""
+  in region: string = "us-east-1"
+  in endpoint: string?               // for S3-compatible services
+  in delete: bool = false            // remove remote files that are not in the source
+  in access_key_id: secret
+  in secret_access_key: secret
+  out transferred: int
+
+  let report = aws_sync(
+    bucket: bucket,
+    dest: dest,
+    region: region,
+    extra: extra_args(endpoint: endpoint, delete: delete),
+    access_key_id: access_key_id,
+    secret_access_key: secret_access_key
+  )
+  for line in report {
+    print(text: line)
+  }
+  set transferred = report.count()
+}
+
+// A flow with a `secret` input cannot be run from a test, so the logic worth testing is in `extra_args`.
+test "no endpoint and no delete adds nothing" {
+  expect count(of: extra_args(endpoint: absent, delete: false)) == 0
+}
+
+test "endpoint and delete are passed through" {
+  let got = extra_args(endpoint: "https://s3.example.com", delete: true)
+  expect got == ["--endpoint-url", "https://s3.example.com", "--delete"]
+}
