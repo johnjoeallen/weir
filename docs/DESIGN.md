@@ -646,6 +646,8 @@ test "ban_noisy_clients writes only offenders" {
 }
 ```
 
+A stub can name arguments, `stub tail(file: "/var/log/a") yields lines: [...]`, and then it answers only calls that pass those values. When several stubs match a call they answer in turn, the first call getting the first, and the last answering every call after. A filter that yields `none` is stubbed with `stub f yields none`.
+
 Tests never touch the real filesystem or run real programs unless a test explicitly opts in. Each test runs in its own sandbox made of its fixtures, with each `fixture dir` appearing at its stated path, so a flow under test sees only what the test gave it. `fn` tests need no fixtures. This section is deliberately thin; fixture semantics are listed as an open question.
 
 ## 13. Worked Example: Log Analysis and Config Change

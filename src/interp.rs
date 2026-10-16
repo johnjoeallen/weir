@@ -149,13 +149,21 @@ impl View {
     }
 }
 
+/// One `stub` line of a test: the answer for a filter, optionally only for calls with these arguments.
+pub struct StubEntry {
+    pub filter: String,
+    pub when: Vec<(String, Value)>,
+    pub value: Value,
+    pub used: bool,
+}
+
 pub struct Interp {
     pub opts: Options,
     pub mounts: Mounts,
     pub units: Vec<Unit>,
     pub steps: Vec<StepRec>,
     path: Vec<String>,
-    pub stubs: HashMap<String, Value>,
+    pub stubs: Vec<StubEntry>,
     pub test_mode: bool,
     /// The `within` blocks being run, innermost last.
     views: Vec<View>,
@@ -231,7 +239,7 @@ impl Interp {
             units,
             steps: vec![],
             path: vec![],
-            stubs: HashMap::new(),
+            stubs: Vec::new(),
             test_mode: false,
             views: vec![],
             sandboxed: false,
@@ -1187,6 +1195,7 @@ impl Interp {
             }
         }
         let mut frame = Frame::new(unit);
+        let mut bound: Vec<(String, Value)> = Vec::new();
         for i in &f.ins {
             let v = match args.iter().position(|(n, _)| n == &i.name) {
                 Some(p) => args.remove(p).1,
@@ -1197,12 +1206,35 @@ impl Interp {
                 },
             };
             conforms(&v, &i.ty).map_err(|e| type_error(format!("input `{}` of filter `{}`: {e}", i.name, f.name)))?;
+            if self.test_mode {
+                bound.push((i.name.clone(), v.clone()));
+            }
             frame.bind(&i.name, v, false);
         }
 
         if self.test_mode {
-            return match self.stubs.get(&f.name) {
-                Some(v) => Ok(v.clone()),
+            // The stubs for this filter whose arguments match this call, in the order written.
+            // Each is used once, in turn; the last one then answers every further call.
+            let matching: Vec<usize> = (0..self.stubs.len())
+                .filter(|&k| {
+                    let s = &self.stubs[k];
+                    s.filter == f.name && s.when.iter().all(|(n, v)| bound.iter().any(|(bn, bv)| bn == n && bv == v))
+                })
+                .collect();
+            let pick = matching.iter().copied().find(|&k| !self.stubs[k].used).or(matching.last().copied());
+            return match pick {
+                Some(k) => {
+                    self.stubs[k].used = true;
+                    Ok(self.stubs[k].value.clone())
+                }
+                None if self.stubs.iter().any(|s| s.filter == f.name) => Err(throw(
+                    "ExecError",
+                    format!(
+                        "no stub for `{}` matches this call ({}); the stubs are matched on the arguments they name",
+                        f.name,
+                        bound.iter().map(|(n, v)| format!("{n}: {}", v.display())).collect::<Vec<_>>().join(", ")
+                    ),
+                )),
                 None => Err(throw(
                     "ExecError",
                     format!("filter `{}` has no stub: tests do not run real programs (add `stub {} yields {}: ...`)", f.name, f.name, f.yields.word()),

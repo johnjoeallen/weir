@@ -621,11 +621,15 @@ impl Parser {
                 self.end_stmt()?;
             } else if self.eat_kw("stub") {
                 let filter = self.any_ident("a filter name")?;
+                let when = if self.is(&Tok::LParen) { self.args()? } else { Vec::new() };
                 self.expect_kw("yields")?;
-                self.io_kind()?;
-                self.expect(Tok::Colon)?;
-                let yields = self.expr()?;
-                items.push(TestItem::Stub { filter, yields, span: sp });
+                let yields = if self.io_kind()? == IoKind::None {
+                    None
+                } else {
+                    self.expect(Tok::Colon)?;
+                    Some(self.expr()?)
+                };
+                items.push(TestItem::Stub { filter, when, yields, span: sp });
                 self.end_stmt()?;
             } else {
                 items.push(TestItem::Stmt(self.stmt()?));

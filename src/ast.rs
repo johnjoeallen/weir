@@ -302,7 +302,7 @@ pub enum FixtureItem {
 #[derive(Debug, Clone)]
 pub enum TestItem {
     Fixture { dir: String, items: Vec<FixtureItem>, span: Span },
-    Stub { filter: String, yields: Expr, span: Span },
+    Stub { filter: String, when: Vec<Arg>, yields: Option<Expr>, span: Span },
     Stmt(Stmt),
 }
 

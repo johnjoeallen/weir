@@ -1406,7 +1406,7 @@ impl<'a> Cx<'a> {
                         self.expr(text, Want::default());
                     }
                 }
-                TestItem::Stub { filter, yields, span } => {
+                TestItem::Stub { filter, when, yields, span } => {
                     if !self.filters.contains_key(filter.as_str()) {
                         let cands: Vec<String> = self.filters.keys().cloned().collect();
                         self.err(
@@ -1419,7 +1419,22 @@ impl<'a> Cx<'a> {
                             }),
                         );
                     }
-                    self.expr(yields, Want::default());
+                    for a in when {
+                        match (&a.name, self.filters.get(filter.as_str())) {
+                            _ if a.spread => self.err(a.span, "E-STUB-ARG", "a stub matches named arguments; a spread is not allowed here".into(), None),
+                            (Some(n), Some(f)) if !f.ins.iter().any(|i| &i.name == n) => self.err(
+                                a.span,
+                                "E-STUB-ARG",
+                                format!("filter `{filter}` has no input `{n}`"),
+                                Some(format!("its inputs are: {}", f.ins.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", "))),
+                            ),
+                            _ => {}
+                        }
+                        self.expr(&a.expr, Want::default());
+                    }
+                    if let Some(y) = yields {
+                        self.expr(y, Want::default());
+                    }
                 }
                 TestItem::Stmt(s) => self.stmt(s),
             }

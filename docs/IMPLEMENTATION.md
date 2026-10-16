@@ -2,7 +2,7 @@
 
 This describes the reference interpreter in `src/`, measured against [DESIGN.md](DESIGN.md). It is Rust with no dependencies, and Linux is the only platform on which it has been run.
 
-Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 34 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
+Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 35 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
 
 ## What is built
 
@@ -51,7 +51,7 @@ These are the places a reader of the design could reasonably have expected somet
 8. **`run(cmd:, args:)` yields lines**, and takes an optional `ok_codes`.
 9. **Name resolution order for a stage:** native stages, then declared filters, then a built-in applied to the value (`path.with_suffix(...)`). A declared filter, fn or flow cannot reuse a built-in or native-stage name (`E-SHADOWS-BUILTIN`).
 10. **`first` and `nth` out of range, and `int(text: "abc")`, throw `ParseError`.**
-11. **Tests never run real programs.** A filter without a `stub` fails the test with the line to add. A stub's value is checked against the filter's `yields`. A flow that fails inside `run` fails the test unless it is wrapped in `try`. Fixtures are directories of text files, mounted read-write at their stated path.
+11. **Tests never run real programs.** A filter without a `stub` fails the test with the line to add. A stub's value is checked against the filter's `yields`. A flow that fails inside `run` fails the test unless it is wrapped in `try`. Fixtures are directories of text files, mounted read-write at their stated path. A stub may name arguments (`stub compose(words: [...]) yields lines: ...`) and then answers only matching calls; the matching stubs for a filter answer in turn and the last repeats. `E-STUB-ARG` for an unknown input name.
 12. **No `sandbox` block means unconfined,** as in 7.6, modelled as a single read-write `/` mount. Built-ins then act on host paths.
 13. **The checker reads `PATH`.** 2.1 says `check` reads nothing but source files, while 7.2 needs a program's resolved path to test it against the mounts. It resolves programs on this machine; a program that is absent is `W-PROGRAM-NOT-FOUND`, not an error, so a script can be checked on a machine that is not the target.
 14. **The sandbox is entered in-process, not by re-executing `weir __sandbox-run`.** The process is single-threaded at that point, so `unshare(CLONE_NEWUSER)` is allowed. The observable behaviour is the same. The original process stays on the host to wait, forward `SIGHUP`/`SIGINT`/`SIGTERM`, return the child's exit status and remove the temporary root.

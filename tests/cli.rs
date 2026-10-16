@@ -73,6 +73,51 @@ fn shipped_example_checks_and_its_tests_pass() {
 }
 
 #[test]
+fn stubs_match_arguments_and_answer_in_turn() {
+    let dir = scratch();
+    let f = dir.join("stubs.weir");
+    std::fs::write(
+        &f,
+        r#"sandbox { mount system }
+filter echo_it {
+  program "echo"
+  in word: string
+  args [word]
+  see system
+  takes none
+  yields lines
+}
+test "by argument and in turn" {
+  stub echo_it(word: "a") yields lines: ["first"]
+  stub echo_it(word: "a") yields lines: ["second"]
+  stub echo_it(word: "b") yields lines: ["bee"]
+  expect echo_it(word: "a") == ["first"]
+  expect echo_it(word: "b") == ["bee"]
+  expect echo_it(word: "a") == ["second"]
+  expect echo_it(word: "a") == ["second"]
+}
+test "a call no stub matches fails" {
+  stub echo_it(word: "a") yields lines: ["first"]
+  expect echo_it(word: "z") == ["first"]
+}
+"#,
+    )
+    .unwrap();
+    let o = weir_args(&["test", f.to_str().unwrap()]);
+    assert_eq!(o.code, 1, "{}{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("ok    by argument and in turn"), "{}", o.stdout);
+    assert!(o.stdout.contains("no stub for `echo_it` matches this call (word: z)"), "{}", o.stdout);
+    let bad = dir.join("bad.weir");
+    std::fs::write(
+        &bad,
+        "sandbox { mount system }\nfilter e {\n  program \"echo\"\n  in w: string\n  args [w]\n  takes none\n  yields lines\n}\ntest \"t\" {\n  stub e(x: 1) yields lines: []\n}\n",
+    )
+    .unwrap();
+    let c = weir_args(&["check", bad.to_str().unwrap()]);
+    assert!(c.stderr.contains("E-STUB-ARG") || c.stdout.contains("E-STUB-ARG"), "{}{}", c.stdout, c.stderr);
+}
+
+#[test]
 fn design_document_examples_check_clean() {
     // The two worked examples in the design (sections 13 and 14) are the language's own spec.
     let doc = std::fs::read_to_string(manifest("docs/DESIGN.md")).unwrap();

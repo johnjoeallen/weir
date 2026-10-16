@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::check::check_program;
 use crate::diag::Diag;
 use crate::error::Ctl;
-use crate::interp::{conforms, ctl_location, describe_ctl, Interp, Options, StepRec, Unit};
+use crate::interp::{conforms, ctl_location, describe_ctl, Interp, Options, StepRec, StubEntry, Unit};
 use crate::json::Json;
 use crate::loader::{load, Program};
 use crate::mounts::{normalize, Mounts};
@@ -1033,8 +1033,11 @@ fn run_test(prog: &Program, t: &Test) -> Result<(), String> {
         interp.test_mode = true;
         let mut frame = interp.test_frame(0);
         for item in &t.items {
-            if let TestItem::Stub { filter, yields, .. } = item {
-                let v = interp.test_eval(yields, &mut frame).map_err(|e| describe_ctl(&e))?;
+            if let TestItem::Stub { filter, when, yields, .. } = item {
+                let v = match yields {
+                    Some(y) => interp.test_eval(y, &mut frame).map_err(|e| describe_ctl(&e))?,
+                    None => Value::Absent,
+                };
                 let f = prog.files[0].file.filters().find(|f| &f.name == filter);
                 if let Some(f) = f {
                     let expect = match f.yields {
@@ -1046,7 +1049,12 @@ fn run_test(prog: &Program, t: &Test) -> Result<(), String> {
                         conforms(&v, &ty).map_err(|e| format!("the stub for `{filter}` yields {}, so it must be a {}: {e}", f.yields.word(), ty.show()))?;
                     }
                 }
-                interp.stubs.insert(filter.clone(), v);
+                let mut conds = Vec::new();
+                for a in when {
+                    let val = interp.test_eval(&a.expr, &mut frame).map_err(|e| describe_ctl(&e))?;
+                    conds.push((a.name.clone().unwrap_or_default(), val));
+                }
+                interp.stubs.push(StubEntry { filter: filter.clone(), when: conds, value: v, used: false });
             }
         }
         for item in &t.items {

@@ -138,6 +138,23 @@ test "search finds the matching lines" {
 }
 ```
 
+A stub can name arguments, and then it answers only calls that pass those values.
+Several stubs for the same filter answer in turn: the first call gets the first
+matching stub, the second call the second, and the last one answers every call after that.
+
+```weir
+test "the second look sees the new container" {
+  stub compose(words: ["ps", "--quiet", "web"]) yields lines: ["old"]
+  stub compose(words: ["ps", "--quiet", "web"]) yields lines: ["old", "new"]
+  stub docker(words: ["rm", "old"]) yields none
+  ...
+}
+```
+
+A stub with no arguments matches every call, so it counts in the turns too. A call that
+no stub matches fails the test and shows the arguments it was made with. A filter that
+yields `none` is stubbed with `yields none` and no value.
+
 A filter without a stub fails the test and tells you the line to add. The generic `run`
 has no stub, so put the calls you want to test in filters, and keep one-off `run` calls
 in flows that the tests don't call.

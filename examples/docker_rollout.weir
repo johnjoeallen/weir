@@ -223,3 +223,29 @@ test "a service that is not running is started" {
   let r = run rollout(project: path(text: "/tmp"), service: "web")
   expect r.replaced == 0
 }
+
+// The same filter answers differently by its arguments, and in turn when the arguments repeat.
+test "a healthy replacement stops and removes the old container" {
+  stub compose(words: ["ps", "-a", "--quiet", "web"]) yields lines: ["old"]
+  stub compose(words: ["ps", "--quiet", "web"]) yields lines: ["old"]       // before scaling up
+  stub compose(words: ["ps", "--quiet", "web"]) yields lines: ["old", "new"] // after
+  stub compose(words: ["up", "--detach", "--scale", "web=2", "--no-recreate", "web"]) yields lines: []
+  stub docker(words: ["inspect", "--format={{json .State.Health}}", "new"]) yields lines: ["{\"Status\":\"healthy\"}"]
+  stub docker(words: ["inspect", "--format={{json .State.Health.Status}}", "new"]) yields lines: ["\"healthy\""]
+  stub docker(words: ["inspect", "--format={{index .Config.Labels \"docker-rollout.pre-stop-hook\"}}", "old"]) yields lines: [""]
+  stub docker(words: ["stop", "old"]) yields lines: []
+  stub docker(words: ["rm", "old"]) yields lines: []
+  stub sleep_seconds yields none
+  stub count_to yields lines: ["1"]
+  let r = run rollout(project: path(text: "/tmp"), service: "web")
+  expect r.replaced == 1
+}
+
+test "a stopped container is replaced on its own" {
+  stub compose(words: ["ps", "-a", "--quiet", "web"]) yields lines: ["a", "b"]
+  stub compose(words: ["ps", "--quiet", "web"]) yields lines: ["a"]
+  stub compose(words: ["up", "--detach", "--no-recreate", "web"]) yields lines: []
+  stub docker(words: ["rm", "b"]) yields lines: []
+  let r = run rollout(project: path(text: "/tmp"), service: "web")
+  expect r.replaced == 1
+}
