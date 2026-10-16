@@ -1,6 +1,6 @@
 //! `weir check`: names, arguments, structure, purity, sandbox declarations and lint rules.
 //! It never runs a command. The one thing it reads beyond source files is `PATH`, to
-//! confirm each program a filter names can be started inside the declared sandbox.
+//! confirm each program a tool names can be started inside the declared sandbox.
 //!
 //! Not done here (see the design notes): full type inference through pipelines, `secret`
 //! tracking through `fn` returns and record fields, and catch-reachability analysis.
@@ -178,7 +178,7 @@ struct Cx<'a> {
     mounts: &'a StaticMounts,
     diags: Vec<Diag>,
     flows: HashMap<String, &'a Flow>,
-    filters: HashMap<String, &'a Filter>,
+    tools: HashMap<String, &'a Tool>,
     fns: HashMap<String, &'a FnDecl>,
     scopes: Vec<HashMap<String, Binding>>,
     in_fn: bool,
@@ -188,7 +188,7 @@ struct Cx<'a> {
     stage_depth: u32,
     loop_depth: u32,
     steps_seen: HashSet<String>,
-    used_filters: HashSet<String>,
+    used_tools: HashSet<String>,
     warned_no_sandbox: bool,
     sets_seen: HashSet<String>,
     /// Names an import was supposed to provide but could not (already reported).
@@ -211,7 +211,7 @@ impl<'a> Cx<'a> {
             mounts,
             diags: vec![],
             flows: HashMap::new(),
-            filters: HashMap::new(),
+            tools: HashMap::new(),
             fns: HashMap::new(),
             scopes: vec![],
             in_fn: false,
@@ -221,7 +221,7 @@ impl<'a> Cx<'a> {
             stage_depth: 0,
             loop_depth: 0,
             steps_seen: HashSet::new(),
-            used_filters: HashSet::new(),
+            used_tools: HashSet::new(),
             warned_no_sandbox: false,
             sets_seen: HashSet::new(),
             unresolved: HashSet::new(),
@@ -242,8 +242,8 @@ impl<'a> Cx<'a> {
         for f in file.flows() {
             cx.flows.insert(f.name.clone(), f);
         }
-        for f in file.filters() {
-            cx.filters.insert(f.name.clone(), f);
+        for f in file.tools() {
+            cx.tools.insert(f.name.clone(), f);
         }
         for f in file.fns() {
             cx.fns.insert(f.name.clone(), f);
@@ -361,7 +361,7 @@ impl<'a> Cx<'a> {
                     }
                     (x.name.clone(), x.span)
                 }
-                Decl::Filter(x) => (x.name.clone(), x.span),
+                Decl::Tool(x) => (x.name.clone(), x.span),
                 Decl::Fn(x) => (x.name.clone(), x.span),
                 Decl::Test(_) => continue,
             };
@@ -381,17 +381,17 @@ impl<'a> Cx<'a> {
 
         for d in &f.decls {
             match d {
-                Decl::Filter(x) => self.filter(x),
+                Decl::Tool(x) => self.tool(x),
                 Decl::Fn(x) => self.fn_decl(x),
                 Decl::Flow(x) => self.flow(x),
                 Decl::Test(x) => self.test(x),
             }
         }
 
-        // Programs a used filter starts must be reachable in the sandbox.
-        let used: Vec<String> = self.used_filters.iter().cloned().collect();
+        // Programs a used tool starts must be reachable in the sandbox.
+        let used: Vec<String> = self.used_tools.iter().cloned().collect();
         for name in used {
-            if let Some(fl) = self.filters.get(&name).copied() {
+            if let Some(fl) = self.tools.get(&name).copied() {
                 self.check_program(&fl.program, fl.program_span);
             }
         }
@@ -512,14 +512,14 @@ impl<'a> Cx<'a> {
         }
     }
 
-    // ---- filters and fns --------------------------------------------------
+    // ---- tools and fns --------------------------------------------------
 
-    fn filter(&mut self, f: &Filter) {
+    fn tool(&mut self, f: &Tool) {
         self.push();
         let mut names = HashSet::new();
         for i in &f.ins {
             if !names.insert(i.name.clone()) {
-                self.err(i.span, "E-DUP-DECL", format!("filter `{}` declares input `{}` twice", f.name, i.name), None);
+                self.err(i.span, "E-DUP-DECL", format!("tool `{}` declares input `{}` twice", f.name, i.name), None);
             }
             self.in_decl_types(i, false);
             self.bind(&i.name, Some(i.ty.clone()), false);
@@ -531,7 +531,7 @@ impl<'a> Cx<'a> {
             self.expr(e, Want { opt_ok: false, secret_ok: true });
         }
         if let Some(sees) = &f.see {
-            self.check_view_items(&format!("filter `{}`", f.name), sees);
+            self.check_view_items(&format!("tool `{}`", f.name), sees);
         }
         if f.takes == IoKind::None && f.yields == IoKind::None && f.args.is_empty() && f.ins.is_empty() {
             // nothing to say: a bare command is fine (e.g. `nginx -t` has args though)
@@ -547,7 +547,7 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// The entries of a filter's `see` lines or a `within` header, against the script's mounts.
+    /// The entries of a tool's `see` lines or a `within` header, against the script's mounts.
     fn check_view_items(&mut self, label: &str, sees: &[(See, Span)]) {
         for (see, span) in sees {
             if let See::Path { path, mode } = see {
@@ -568,7 +568,7 @@ impl<'a> Cx<'a> {
         }
     }
 
-    fn check_see(&mut self, filter: &str, path: &str, mode: Mode, span: Span) {
+    fn check_see(&mut self, tool: &str, path: &str, mode: Mode, span: Span) {
         if !self.mounts.present {
             return;
         }
@@ -577,7 +577,7 @@ impl<'a> Cx<'a> {
                 self.err(
                     span,
                     "E-SEE-UNMOUNTED",
-                    format!("{filter} needs {path} rw, but the sandbox mounts {m} ro"),
+                    format!("{tool} needs {path} rw, but the sandbox mounts {m} ro"),
                     Some(format!("mount it rw in the sandbox block, or change the `see` to `{path} ro`")),
                 );
             }
@@ -586,7 +586,7 @@ impl<'a> Cx<'a> {
                 self.err(
                     span,
                     "E-SEE-UNMOUNTED",
-                    format!("{filter} needs {path} {}, which is not mounted in the sandbox", mode.word()),
+                    format!("{tool} needs {path} {}, which is not mounted in the sandbox", mode.word()),
                     Some(format!("add `mount \"{path}\" {}` to the sandbox block", mode.word())),
                 );
             }
@@ -898,12 +898,12 @@ impl<'a> Cx<'a> {
                 }
             }
             ExprKind::Call { name, args } => {
-                if let Some(f) = self.filters.get(name.as_str()).copied() {
+                if let Some(f) = self.tools.get(name.as_str()).copied() {
                     if f.takes != IoKind::None && !self.fns.contains_key(name.as_str()) {
                         self.err(
                             e.span,
-                            "E-FILTER-NEEDS-INPUT",
-                            format!("filter `{name}` takes {} on stdin, so it cannot start a pipeline", f.takes.word()),
+                            "E-TOOL-NEEDS-INPUT",
+                            format!("tool `{name}` takes {} on stdin, so it cannot start a pipeline", f.takes.word()),
                             Some(format!("chain it after a stage that supplies the input: `source.{name}(...)`")),
                         );
                     }
@@ -986,7 +986,7 @@ impl<'a> Cx<'a> {
                 cands.extend(self.flows.keys().cloned());
                 let hint = if self.cur_outs.contains(n) {
                     Some(format!("`{n}` is an output: it can be assigned with `set {n} = ...` but not read; keep the value in a `var` and `set` it at the end"))
-                } else if self.flows.contains_key(n) || self.filters.contains_key(n) || self.fns.contains_key(n) || builtins::is_builtin(n) {
+                } else if self.flows.contains_key(n) || self.tools.contains_key(n) || self.fns.contains_key(n) || builtins::is_builtin(n) {
                     Some(format!("`{n}` is a callable, not a value; call it with `{n}(...)`"))
                 } else {
                     suggest(n, &self.names_in_scope()).map(|c| format!("did you mean `{c}`?")).or_else(|| {
@@ -1011,7 +1011,7 @@ impl<'a> Cx<'a> {
                             span,
                             "E-SECRET-LEAK",
                             format!("`{n}` is a secret and cannot be used here"),
-                            Some("a secret may reach a program only through a filter's `env { NAME = ... }` or its stdin".into()),
+                            Some("a secret may reach a program only through a tool's `env { NAME = ... }` or its stdin".into()),
                         );
                     }
                     _ => {}
@@ -1031,9 +1031,9 @@ impl<'a> Cx<'a> {
         if let Some(f) = self.flows.get(name).copied() {
             return Some(("flow", in_params(&f.ins), None));
         }
-        if let Some(f) = self.filters.get(name).copied() {
-            self.used_filters.insert(name.to_string());
-            return Some(("filter", in_params(&f.ins), None));
+        if let Some(f) = self.tools.get(name).copied() {
+            self.used_tools.insert(name.to_string());
+            return Some(("tool", in_params(&f.ins), None));
         }
         if let Some(sig) = builtins::find(name, arg_names) {
             return Some((
@@ -1057,7 +1057,7 @@ impl<'a> Cx<'a> {
                 self.quiet_names -= 1;
                 return;
             }
-            let mut cands: Vec<String> = self.fns.keys().chain(self.flows.keys()).chain(self.filters.keys()).cloned().collect();
+            let mut cands: Vec<String> = self.fns.keys().chain(self.flows.keys()).chain(self.tools.keys()).cloned().collect();
             cands.extend(builtins::names().iter().map(|s| s.to_string()));
             cands.sort();
             cands.dedup();
@@ -1065,7 +1065,7 @@ impl<'a> Cx<'a> {
                 Some(c) => format!("did you mean `{c}`?"),
                 None => format!("in scope: {}", cands.join(", ")),
             };
-            self.err(span, "E-UNKNOWN-CALL", format!("there is no flow, filter, fn or built-in named `{name}`"), Some(hint));
+            self.err(span, "E-UNKNOWN-CALL", format!("there is no flow, tool, fn or built-in named `{name}`"), Some(hint));
             for a in args {
                 self.expr(&a.expr, Want::default());
             }
@@ -1075,7 +1075,7 @@ impl<'a> Cx<'a> {
         // Purity.
         if self.in_fn {
             let impure = match kind {
-                "flow" | "filter" => true,
+                "flow" | "tool" => true,
                 "built-in" => effect != Some(Effect::Pure),
                 _ => false,
             };
@@ -1091,12 +1091,12 @@ impl<'a> Cx<'a> {
         if self.in_requires && kind == "built-in" && !matches!(effect, Some(Effect::Pure) | Some(Effect::Read)) {
             self.err(span, "E-REQUIRES-IMPURE", format!("a `requires` condition cannot call `{name}`"), Some("preconditions are pure or read-only, such as `exists(path: ...)`".into()));
         }
-        if self.in_requires && (kind == "flow" || kind == "filter") {
+        if self.in_requires && (kind == "flow" || kind == "tool") {
             self.err(span, "E-REQUIRES-IMPURE", format!("a `requires` condition cannot call {kind} `{name}`"), None);
         }
 
         // Starting programs.
-        if kind == "filter" {
+        if kind == "tool" {
             self.note_exec(span);
         }
         if name == "run" && kind == "built-in" {
@@ -1229,7 +1229,7 @@ impl<'a> Cx<'a> {
                     c.span,
                     "E-DYNAMIC-CMD",
                     "`run` needs a literal `cmd`".into(),
-                    Some("the checker infers which executables a flow may start, so the name cannot be computed; declare a `filter` with a fixed `program`".into()),
+                    Some("the checker infers which executables a flow may start, so the name cannot be computed; declare a `tool` with a fixed `program`".into()),
                 ),
                 Some(s) => {
                     let base = s.rsplit('/').next().unwrap_or("").to_string();
@@ -1238,7 +1238,7 @@ impl<'a> Cx<'a> {
                             c.span,
                             "W-SHELL-STRING",
                             format!("`run` starts the shell `{base}`; a string passed to it is re-parsed, which is what Weir exists to avoid"),
-                            Some("wrap the real program in a `filter` and pass arguments as a list".into()),
+                            Some("wrap the real program in a `tool` and pass arguments as a list".into()),
                         );
                     } else if DESTRUCTIVE.contains(&base.as_str()) {
                         self.warn(
@@ -1337,13 +1337,13 @@ impl<'a> Cx<'a> {
             }
             return;
         }
-        if let Some(f) = self.filters.get(name).copied() {
+        if let Some(f) = self.tools.get(name).copied() {
             if f.takes == IoKind::None {
                 self.err(
                     span,
-                    "E-FILTER-TAKES-NONE",
-                    format!("filter `{name}` takes no input, so nothing can be chained into it"),
-                    Some(format!("call it at the start of a pipeline: `{name}(...)`, or declare `takes lines` or `takes text` on the filter")),
+                    "E-TOOL-TAKES-NONE",
+                    format!("tool `{name}` takes no input, so nothing can be chained into it"),
+                    Some(format!("call it at the start of a pipeline: `{name}(...)`, or declare `takes lines` or `takes text` on the tool")),
                 );
             }
             self.call(name, args, span, None);
@@ -1374,7 +1374,7 @@ impl<'a> Cx<'a> {
             return;
         }
         let mut cands: Vec<String> = NATIVE_STAGES.iter().map(|s| s.to_string()).collect();
-        cands.extend(self.filters.keys().cloned());
+        cands.extend(self.tools.keys().cloned());
         cands.sort();
         self.err(
             span,
@@ -1406,26 +1406,26 @@ impl<'a> Cx<'a> {
                         self.expr(text, Want::default());
                     }
                 }
-                TestItem::Stub { filter, when, yields, span } => {
-                    if !self.filters.contains_key(filter.as_str()) {
-                        let cands: Vec<String> = self.filters.keys().cloned().collect();
+                TestItem::Stub { tool, when, yields, span } => {
+                    if !self.tools.contains_key(tool.as_str()) {
+                        let cands: Vec<String> = self.tools.keys().cloned().collect();
                         self.err(
                             *span,
-                            "E-STUB-UNKNOWN-FILTER",
-                            format!("there is no filter named `{filter}` to stub"),
-                            Some(match suggest(filter, &cands) {
+                            "E-STUB-UNKNOWN-TOOL",
+                            format!("there is no tool named `{tool}` to stub"),
+                            Some(match suggest(tool, &cands) {
                                 Some(s) => format!("did you mean `{s}`?"),
-                                None => format!("filters: {}", cands.join(", ")),
+                                None => format!("tools: {}", cands.join(", ")),
                             }),
                         );
                     }
                     for a in when {
-                        match (&a.name, self.filters.get(filter.as_str())) {
+                        match (&a.name, self.tools.get(tool.as_str())) {
                             _ if a.spread => self.err(a.span, "E-STUB-ARG", "a stub matches named arguments; a spread is not allowed here".into(), None),
                             (Some(n), Some(f)) if !f.ins.iter().any(|i| &i.name == n) => self.err(
                                 a.span,
                                 "E-STUB-ARG",
-                                format!("filter `{filter}` has no input `{n}`"),
+                                format!("tool `{tool}` has no input `{n}`"),
                                 Some(format!("its inputs are: {}", f.ins.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", "))),
                             ),
                             _ => {}

@@ -16,7 +16,7 @@
 // every program it starts run inside that sandbox. Every path in this file is therefore a
 // path inside the sandbox, and anything that is not mounted does not exist. The paths given
 // as command-line options (such as --log) are host paths, and are translated through the
-// mounts. A filter's `sandbox { see ... }` clause narrows what its program sees. Use
+// mounts. A tool's `sandbox { see ... }` clause narrows what its program sees. Use
 // --no-sandbox only on a host where a sandbox cannot be created.
 //
 // With no flow name, `weir run` runs the `main` flow. Flows that are neither
@@ -34,10 +34,10 @@ sandbox {
 }
 
 // ---------------------------------------------------------------------------
-// Declared filters: each wraps exactly one external program
+// Declared tools: each wraps exactly one external program
 // ---------------------------------------------------------------------------
 
-filter cat_file {
+tool cat_file {
   program "cat"
   in file: path
   args ["--", file]                 // -- stops a file named "-x" being read as a flag
@@ -47,7 +47,7 @@ filter cat_file {
   yields lines
 }
 
-filter zcat_file {
+tool zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
@@ -57,7 +57,7 @@ filter zcat_file {
   yields lines
 }
 
-filter grep_fixed {
+tool grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern]        // -e protects a pattern like "-foo" from being read as a flag
@@ -67,7 +67,7 @@ filter grep_fixed {
   ok_codes [0, 1]                   // grep exits 1 for "no match", which is not a failure
 }
 
-filter nginx_test {
+tool nginx_test {
   program "nginx"
   args ["-t"]
   see system
@@ -77,7 +77,7 @@ filter nginx_test {
   yields none
 }
 
-filter nginx_reload {
+tool nginx_reload {
   program "nginx"
   args ["-s", "reload"]
   see system

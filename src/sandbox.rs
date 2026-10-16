@@ -568,7 +568,7 @@ mod linux {
         }
     }
 
-    /// Narrow what one program sees (a filter's `see` lines, or the view of a `within` block): the program starts in
+    /// Narrow what one program sees (a tool's `see` lines, or the view of a `within` block): the program starts in
     /// a nested mount namespace holding only the listed inside paths. Call only inside the sandbox.
     pub fn narrow(cmd: &mut Command, sees: Vec<(String, Mode)>, system: bool, explicit: Vec<(String, String)>, standalone: bool) {
         let mut binds: Vec<Bind> = Vec::new();

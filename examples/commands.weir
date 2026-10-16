@@ -15,10 +15,10 @@ sandbox {
 }
 
 // ---------------------------------------------------------------------------
-// 1. A declared filter: one program, typed parameters, a declared view of the disk.
+// 1. A declared tool: one program, typed parameters, a declared view of the disk.
 // ---------------------------------------------------------------------------
 
-filter cat_file {
+tool cat_file {
   program "cat"
   in file: path
   args ["--", file]          // a list; "--" stops a file named "-x" being read as an option
@@ -28,8 +28,8 @@ filter cat_file {
   yields lines               // stdout becomes a list of lines
 }
 
-// A filter that reads the lines before it in a chain: `takes lines`.
-filter grep_fixed {
+// A tool that reads the lines before it in a chain: `takes lines`.
+tool grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern] // -e protects a pattern such as "-foo" from being read as an option
@@ -44,15 +44,15 @@ fn describe(code: int) -> string {
   return if code == 0 { "succeeded" } else { "failed with return code ${code}" }
 }
 
-// Calls filters only, so a test can stub both programs and run this flow.
+// Calls tools only, so a test can stub both programs and run this flow.
 flow search {
   in  pattern: string
   out found: list<string>
 
-  // Call a filter like a function.
+  // Call a tool like a function.
   let passwd = cat_file(file: path(text: "/etc/passwd"))
 
-  // Chain filters with `.`: the lines on the left feed `takes lines` on the right.
+  // Chain tools with `.`: the lines on the left feed `takes lines` on the right.
   set found = passwd.grep_fixed(pattern: pattern)
 }
 
@@ -60,11 +60,11 @@ main flow commands {
   in  pattern: string = "root"
   out matches: int
 
-  // 1. Filters. `search` calls cat_file and chains grep_fixed after it.
+  // 1. Tools. `search` calls cat_file and chains grep_fixed after it.
   let found = search(pattern: pattern).found
   print(text: "lines containing '${pattern}': ${count(of: found)}")
 
-  // 2. The generic form, for a one-off call that does not need a declared filter.
+  // 2. The generic form, for a one-off call that does not need a declared tool.
   //    `cmd` must be a literal string, so the program is known before the script runs.
   let kernel = run(cmd: "uname", args: ["-s", "-r"])
   print(text: "kernel: ${first(of: kernel)}")
@@ -108,7 +108,7 @@ test "describe names the return code" {
   expect describe(code: 2) == "failed with return code 2"
 }
 
-// Tests never start a real program. A filter is stubbed with the lines it would yield.
+// Tests never start a real program. A tool is stubbed with the lines it would yield.
 test "search finds the matching lines" {
   stub cat_file yields lines: ["root:x:0:0", "daemon:x:1:1", "root2:x:2:2"]
   stub grep_fixed yields lines: ["root:x:0:0", "root2:x:2:2"]

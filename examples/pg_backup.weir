@@ -8,7 +8,7 @@
 // A port of prodrigestivill/docker-postgres-backup-local's backup.sh. The dump is a
 // compressed custom-format file (pg_dump -Fc), so there is no `| gzip`. Each dump is
 // hard-linked as the daily, weekly and monthly copy, and old copies are removed with `find`.
-// Every external program is a filter: pg_dump, date, mkdir, ln and find.
+// Every external program is a tool: pg_dump, date, mkdir, ln and find.
 
 sandbox {
   in backup_dir: path = "."          // host folder that holds last/, daily/, weekly/ and monthly/
@@ -16,7 +16,7 @@ sandbox {
   mount backup_dir at "/backups" rw
 }
 
-filter pg_dump {
+tool pg_dump {
   program "pg_dump"
   in host: string
   in port: int
@@ -35,7 +35,7 @@ filter pg_dump {
 }
 
 // One call gives every name the backups need: "20261016-101500,20261016,202642,202610".
-filter stamps {
+tool stamps {
   program "date"
   args ["+%Y%m%d-%H%M%S,%Y%m%d,%G%V,%Y%m"]
   see system
@@ -43,7 +43,7 @@ filter stamps {
   yields lines
 }
 
-filter make_dir {
+tool make_dir {
   program "mkdir"
   in dir: path
   args ["-p", "--", dir]
@@ -53,7 +53,7 @@ filter make_dir {
   yields none
 }
 
-filter hard_link {
+tool hard_link {
   program "ln"
   in from: path
   in to: path
@@ -65,7 +65,7 @@ filter hard_link {
 }
 
 // Remove files in one folder that are older than `age`; `by` is find's "-mtime" (days) or "-mmin" (minutes).
-filter prune {
+tool prune {
   program "find"
   in dir: path
   in pattern: string

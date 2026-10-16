@@ -20,7 +20,7 @@ sandbox {
   mount source at "/source" ro
 }
 
-filter aws_sync {
+tool aws_sync {
   program "aws"
   in bucket: string
   in dest: string

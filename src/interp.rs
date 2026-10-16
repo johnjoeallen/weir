@@ -24,7 +24,7 @@ pub struct Options {
 #[derive(Default)]
 pub struct Unit {
     pub flows: HashMap<String, Rc<Flow>>,
-    pub filters: HashMap<String, Rc<Filter>>,
+    pub tools: HashMap<String, Rc<Tool>>,
     pub fns: HashMap<String, Rc<FnDecl>>,
     /// Flows imported with `use`: name -> (unit that defines it, flow).
     pub imports: HashMap<String, (usize, Rc<Flow>)>,
@@ -38,8 +38,8 @@ impl Unit {
                 Decl::Flow(x) => {
                     u.flows.insert(x.name.clone(), Rc::new(x.clone()));
                 }
-                Decl::Filter(x) => {
-                    u.filters.insert(x.name.clone(), Rc::new(x.clone()));
+                Decl::Tool(x) => {
+                    u.tools.insert(x.name.clone(), Rc::new(x.clone()));
                 }
                 Decl::Fn(x) => {
                     u.fns.insert(x.name.clone(), Rc::new(x.clone()));
@@ -124,10 +124,10 @@ impl View {
         self.paths.iter().any(|(base, _)| is_under(base, mount))
     }
 
-    /// What a program started inside this view sees: this view, cut down to a filter's own `see` lines.
-    /// An explicit mount is in the result only if both the view and the filter name it.
-    fn narrow_to(&self, filter: Option<(Vec<(String, Mode)>, bool)>, explicit: &[String]) -> (Vec<(String, Mode)>, bool) {
-        let Some((fpaths, fsystem)) = filter else {
+    /// What a program started inside this view sees: this view, cut down to a tool's own `see` lines.
+    /// An explicit mount is in the result only if both the view and the tool name it.
+    fn narrow_to(&self, tool: Option<(Vec<(String, Mode)>, bool)>, explicit: &[String]) -> (Vec<(String, Mode)>, bool) {
+        let Some((fpaths, fsystem)) = tool else {
             return (self.paths.clone(), self.system);
         };
         let both_name = |path: &str, fp: &str, vp: &str| {
@@ -149,9 +149,9 @@ impl View {
     }
 }
 
-/// One `stub` line of a test: the answer for a filter, optionally only for calls with these arguments.
+/// One `stub` line of a test: the answer for a tool, optionally only for calls with these arguments.
 pub struct StubEntry {
-    pub filter: String,
+    pub tool: String,
     pub when: Vec<(String, Value)>,
     pub value: Value,
     pub used: bool,
@@ -268,7 +268,7 @@ impl Interp {
                     return Err(throw(
                         "CapabilityError",
                         format!(
-                            "cannot {op} {inside}: it is on the explicit mount {}, which only a filter's `see` line or a `within` block that names it can reach",
+                            "cannot {op} {inside}: it is on the explicit mount {}, which only a tool's `see` line or a `within` block that names it can reach",
                             m.inside
                         ),
                     ));
@@ -971,15 +971,15 @@ impl Interp {
             let a = self.eval_named_args(args, frame)?;
             return self.call_flow(u, &flow, a);
         }
-        if let Some(f) = self.units[unit].filters.get(name).cloned() {
+        if let Some(f) = self.units[unit].tools.get(name).cloned() {
             let a = self.eval_named_args(args, frame)?;
-            return self.call_filter(unit, &f, a, None);
+            return self.call_tool(unit, &f, a, None);
         }
         if builtins::is_builtin(name) {
             let a = if name == "run" { self.eval_named_args(args, frame)? } else { self.eval_named_args(args, frame)? };
             return self.call_builtin(name, a, span);
         }
-        Err(type_error(format!("there is no flow, filter, fn or built-in named `{name}`")))
+        Err(type_error(format!("there is no flow, tool, fn or built-in named `{name}`")))
     }
 
     fn call_fn(&mut self, unit: usize, f: &Rc<FnDecl>, mut args: Vec<(String, Value)>) -> R<Value> {
@@ -1181,13 +1181,13 @@ impl Interp {
         Ok(())
     }
 
-    // ---- filters and programs --------------------------------------------
+    // ---- tools and programs --------------------------------------------
 
-    fn call_filter(&mut self, unit: usize, f: &Rc<Filter>, mut args: Vec<(String, Value)>, stdin: Option<Value>) -> R<Value> {
+    fn call_tool(&mut self, unit: usize, f: &Rc<Tool>, mut args: Vec<(String, Value)>, stdin: Option<Value>) -> R<Value> {
         for a in &args {
             if !f.ins.iter().any(|i| i.name == a.0) {
                 return Err(type_error(format!(
-                    "filter `{}` has no input `{}`; its inputs are: {}",
+                    "tool `{}` has no input `{}`; its inputs are: {}",
                     f.name,
                     a.0,
                     if f.ins.is_empty() { "(none)".to_string() } else { f.ins.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", ") }
@@ -1202,10 +1202,10 @@ impl Interp {
                 None => match &i.default {
                     Some(d) => self.eval(d, &mut frame)?,
                     None if i.ty.is_optional() => Value::Absent,
-                    None => return Err(type_error(format!("filter `{}` is missing the input `{}`", f.name, i.name))),
+                    None => return Err(type_error(format!("tool `{}` is missing the input `{}`", f.name, i.name))),
                 },
             };
-            conforms(&v, &i.ty).map_err(|e| type_error(format!("input `{}` of filter `{}`: {e}", i.name, f.name)))?;
+            conforms(&v, &i.ty).map_err(|e| type_error(format!("input `{}` of tool `{}`: {e}", i.name, f.name)))?;
             if self.test_mode {
                 bound.push((i.name.clone(), v.clone()));
             }
@@ -1213,12 +1213,12 @@ impl Interp {
         }
 
         if self.test_mode {
-            // The stubs for this filter whose arguments match this call, in the order written.
+            // The stubs for this tool whose arguments match this call, in the order written.
             // Each is used once, in turn; the last one then answers every further call.
             let matching: Vec<usize> = (0..self.stubs.len())
                 .filter(|&k| {
                     let s = &self.stubs[k];
-                    s.filter == f.name && s.when.iter().all(|(n, v)| bound.iter().any(|(bn, bv)| bn == n && bv == v))
+                    s.tool == f.name && s.when.iter().all(|(n, v)| bound.iter().any(|(bn, bv)| bn == n && bv == v))
                 })
                 .collect();
             let pick = matching.iter().copied().find(|&k| !self.stubs[k].used).or(matching.last().copied());
@@ -1227,7 +1227,7 @@ impl Interp {
                     self.stubs[k].used = true;
                     Ok(self.stubs[k].value.clone())
                 }
-                None if self.stubs.iter().any(|s| s.filter == f.name) => Err(throw(
+                None if self.stubs.iter().any(|s| s.tool == f.name) => Err(throw(
                     "ExecError",
                     format!(
                         "no stub for `{}` matches this call ({}); the stubs are matched on the arguments they name",
@@ -1237,7 +1237,7 @@ impl Interp {
                 )),
                 None => Err(throw(
                     "ExecError",
-                    format!("filter `{}` has no stub: tests do not run real programs (add `stub {} yields {}: ...`)", f.name, f.name, f.yields.word()),
+                    format!("tool `{}` has no stub: tests do not run real programs (add `stub {} yields {}: ...`)", f.name, f.name, f.yields.word()),
                 )),
             };
         }
@@ -1254,7 +1254,7 @@ impl Interp {
                         if !self.mounts.is_system_mounted() {
                             return Err(throw(
                                 "CapabilityError",
-                                format!("filter `{}` needs `see system`, but the script does not `mount system`", f.name),
+                                format!("tool `{}` needs `see system`, but the script does not `mount system`", f.name),
                             ));
                         }
                     }
@@ -1264,14 +1264,14 @@ impl Interp {
                             Some((m, _)) if m.mode == Mode::Ro && *mode == Mode::Rw => {
                                 return Err(throw(
                                     "CapabilityError",
-                                    format!("filter `{}` needs {p} rw, but the sandbox mounts {} ro", f.name, m.inside),
+                                    format!("tool `{}` needs {p} rw, but the sandbox mounts {} ro", f.name, m.inside),
                                 ))
                             }
                             Some(_) => paths.push((normalize(&p), *mode)),
                             None => {
                                 return Err(throw(
                                     "CapabilityError",
-                                    format!("filter `{}` needs {p} {}, which is not mounted in the sandbox", f.name, mode.word()),
+                                    format!("tool `{}` needs {p} {}, which is not mounted in the sandbox", f.name, mode.word()),
                                 ))
                             }
                         }
@@ -1308,14 +1308,14 @@ impl Interp {
         }
 
         if f.takes == IoKind::None && stdin.is_some() {
-            return Err(type_error(format!("filter `{}` takes no input, so nothing can be chained into it", f.name)));
+            return Err(type_error(format!("tool `{}` takes no input, so nothing can be chained into it", f.name)));
         }
         let stdin_text = match f.takes {
             IoKind::None => None,
             IoKind::Lines | IoKind::Text | IoKind::Json => match stdin {
                 None => {
                     return Err(type_error(format!(
-                        "filter `{}` takes {} on stdin, so it must follow another stage: `.{}(...)`",
+                        "tool `{}` takes {} on stdin, so it must follow another stage: `.{}(...)`",
                         f.name,
                         f.takes.word(),
                         f.name
@@ -1334,7 +1334,7 @@ impl Interp {
                     Some(t)
                 }
                 Some(Value::Secret(s)) => Some(s.to_string()),
-                Some(v) => return Err(type_error(format!("filter `{}` cannot take a {} on stdin", f.name, v.type_name()))),
+                Some(v) => return Err(type_error(format!("tool `{}` cannot take a {} on stdin", f.name, v.type_name()))),
             },
         };
         let program = f.program.clone();
@@ -1596,9 +1596,9 @@ impl Interp {
         }
 
         let unit = frame.unit;
-        if let Some(f) = self.units[unit].filters.get(name).cloned() {
+        if let Some(f) = self.units[unit].tools.get(name).cloned() {
             let a = self.eval_named_args(args, frame)?;
-            return self.call_filter(unit, &f, a, Some(input));
+            return self.call_tool(unit, &f, a, Some(input));
         }
         if builtins::is_builtin(name) {
             // A built-in applied to a value: the receiver is the first parameter.
@@ -1613,7 +1613,7 @@ impl Interp {
         }
         let mut candidates: Vec<String> =
             ["lines", "map", "filter", "take", "unique", "count", "count_by", "sort_by"].iter().map(|s| s.to_string()).collect();
-        candidates.extend(self.units[unit].filters.keys().cloned());
+        candidates.extend(self.units[unit].tools.keys().cloned());
         candidates.sort();
         Err(type_error(format!("there is no stage `{name}`; the stages in scope are: {}", candidates.join(", "))))
     }

@@ -72,7 +72,7 @@ Text mode prints `file:line:col: code: message` followed by the fix hint. `--jso
 | 1    | flow failure (a step failed, an uncaught error, `fail`)              |
 | 2    | usage error (bad flag, missing input, wrong type on the command line) |
 | 3    | check error (`weir check` found errors, or `run` refused to start)   |
-| 4    | capability denied (the sandbox cannot be created, or a filter's `see` clause asks for more than the sandbox provides) |
+| 4    | capability denied (the sandbox cannot be created, or a tool's `see` clause asks for more than the sandbox provides) |
 
 `weir run` always performs the check pass first. Check errors exit 3 and nothing runs. Warnings do not block a run.
 
@@ -98,12 +98,12 @@ private flow prune_old {
 }
 ```
 
-### 3.2 `filter`
+### 3.2 `tool`
 
 A typed wrapper around exactly one external program. It declares the program, its parameters, how it consumes input (`takes`), what it produces (`yields`), and which exit codes mean success (`ok_codes`).
 
 ```weir
-filter journalctl {
+tool journalctl {
   program "journalctl"
   in unit: string
   in since: string = "24 hours ago"
@@ -138,7 +138,7 @@ Every additional declaration kind (type definitions, aliases, macros, classes) w
 
 **Alternative rejected: a single `fn` kind that may or may not be pure.** The purity split is what lets the checker promise that a `fn` call in a `--plan` run can be evaluated safely, and lets tests call a `fn` without fixtures.
 
-**Alternative rejected: wrapping programs ad hoc with `run` only.** `run` still exists, but a `filter` gives the checker a declared stdin/stdout shape and exit-code contract, which is what pipeline typing depends on.
+**Alternative rejected: wrapping programs ad hoc with `run` only.** `run` still exists, but a `tool` gives the checker a declared stdin/stdout shape and exit-code contract, which is what pipeline typing depends on.
 
 ## 4. Flow Anatomy
 
@@ -226,7 +226,7 @@ The checker errors on a repeated step with no `as` label, since without it the p
 
 `path` is distinct from `string` because command-line path inputs are translated through the sandbox's mount table ([section 7.1](#71-the-script-defines-the-sandbox)) and the built-in `delete`/`move` need to know which values are filesystem locations. A `string` is never implicitly converted to a `path`; use `path(text: s)`.
 
-**`secret`.** A `secret` cannot be printed, interpolated into a string, placed in a command's argument list, or written to a file by the checker's rules. It can only reach a program through a filter's environment (`env { NAME = token }`) or its stdin. It is redacted in logs and plan output. It cannot be accepted on argv ([section 11.2](#112-input-flags)).
+**`secret`.** A `secret` cannot be printed, interpolated into a string, placed in a command's argument list, or written to a file by the checker's rules. It can only reach a program through a tool's environment (`env { NAME = token }`) or its stdin. It is redacted in logs and plan output. It cannot be accepted on argv ([section 11.2](#112-input-flags)).
 
 **Mutability.** `let` bindings are immutable. `var` is explicit and local. There is no mutable module-level state; a file's top level contains declarations only. This removes the class of bugs where a function's behaviour depends on what some other function did to a global.
 
@@ -244,7 +244,7 @@ A command is invoked with an argument list. There is no shell involved. Quoting 
 run(cmd: "tar", args: ["-czf", archive, ...$files])
 ```
 
-`...$list` spreads a list into the argument list. A filter invocation is the same mechanism with the argument template declared once.
+`...$list` spreads a list into the argument list. A tool invocation is the same mechanism with the argument template declared once.
 
 **Alternative rejected: allowing `run(cmd: "tar -czf $a $b")`.** Convenient, and exactly the bug generator this language exists to remove. There is no escape hatch to a shell string in v1. If a user needs a shell, `run(cmd: "bash", args: ["-c", script])` is available and visibly marks the boundary; the checker warns on it (`W-SHELL-STRING`).
 
@@ -315,7 +315,7 @@ All mounts are `nosuid` and `nodev`. A mount is a folder or a single file. Where
 
 #### 7.1.1 Explicit mounts
 
-A mount marked `explicit` is part of the sandbox but not of its default view. The script's built-ins, a generic `run`, a filter with no `see` lines and a `within` block that does not name it cannot reach it. A program sees it only if its filter has a `see` line for it, or it runs inside a `within` block whose header names it. The mount must still be declared in the `sandbox` block, so the script lists everything it can ever reach, and a reader finds the request next to the mount.
+A mount marked `explicit` is part of the sandbox but not of its default view. The script's built-ins, a generic `run`, a tool with no `see` lines and a `within` block that does not name it cannot reach it. A program sees it only if its tool has a `see` line for it, or it runs inside a `within` block whose header names it. The mount must still be declared in the `sandbox` block, so the script lists everything it can ever reach, and a reader finds the request next to the mount.
 
 ```weir
 sandbox {
@@ -323,7 +323,7 @@ sandbox {
   mount "/run/docker.sock" rw explicit   // the Docker daemon: root on the host
 }
 
-filter docker {
+tool docker {
   program "docker"
   in subcommand: list<string>
   args [...$subcommand]
@@ -343,9 +343,9 @@ filter docker {
 
 **Host side and inside side.** `<host>` is a path on the machine running Weir. `<inside>` is the path the script sees. Using different values makes a script portable across hosts: the script refers only to `/data`, and the operator decides which host folder that is. The sandbox block may declare `in` values of type `path` for the host side, like a flow's inputs. They produce flags (`--logs /srv/nginx-logs`) and `--help` entries and are evaluated before the sandbox is entered. They exist only for the sandbox block; flows cannot read them, because after the sandbox is entered the host path is not meaningful to the script.
 
-**What is inside.** The sandbox root is an empty, read-only tmpfs holding the mount points, plus three fixed entries that are not declared: a private writable `/tmp`, a minimal `/dev` (`null`, `zero`, `urandom`, `tty`), and `/proc` for a new PID namespace. The working directory is `/tmp`. The environment is rebuilt rather than inherited: only `PATH`, `LANG`, `TZ`, `HOME` (set to `/tmp`) and what a filter declares in `env`.
+**What is inside.** The sandbox root is an empty, read-only tmpfs holding the mount points, plus three fixed entries that are not declared: a private writable `/tmp`, a minimal `/dev` (`null`, `zero`, `urandom`, `tty`), and `/proc` for a new PID namespace. The working directory is `/tmp`. The environment is rebuilt rather than inherited: only `PATH`, `LANG`, `TZ`, `HOME` (set to `/tmp`) and what a tool declares in `env`.
 
-**Paths in the script are inside paths.** A `path` literal, a `path` default and every path computed by `/` joining is a path in the sandbox. Built-ins such as `read_text`, `write` and `delete` operate on the sandbox. External programs started by `filter` and `run` run in the same sandbox and inherit its view, so `tail(file: log, n: 10)` passes the program the same path the script used.
+**Paths in the script are inside paths.** A `path` literal, a `path` default and every path computed by `/` joining is a path in the sandbox. Built-ins such as `read_text`, `write` and `delete` operate on the sandbox. External programs started by `tool` and `run` run in the same sandbox and inherit its view, so `tail(file: log, n: 10)` passes the program the same path the script used.
 
 **Paths from the command line are host paths.** An operator thinks in host paths, so a `path` input given as `--log /var/log/nginx/access.log` is a host path that Weir translates through the mount table to the inside path. A relative path is resolved against the host working directory first. If the path does not fall under any mount, the run fails with exit 2 and a message that lists the mounts. Defaults written in the script are inside paths. If two mounts expose the same host path, translation is ambiguous and `weir check` reports an error for the mounts it can compare statically; at run time the more specific inside path is used.
 
@@ -364,16 +364,16 @@ filter docker {
 
 ### 7.2 Executable capabilities are inferred
 
-The set of executables a flow may run is computed from its call graph: the `program` of each filter it reaches, and the literal `cmd` of each `run`. A dynamic `cmd` (computed at runtime) is a check error, which is the reason `program` and `cmd` must be literals. This set is an allow-list of which programs may be started. `weir check` also verifies that each program's resolved path lies under a mount in the sandbox, and reports `E-SANDBOX-EXEC-UNREACHABLE` with the fix hint `add mount system, or mount "<dir>" ro` if not. Weir does not add executable or library paths on its own.
+The set of executables a flow may run is computed from its call graph: the `program` of each tool it reaches, and the literal `cmd` of each `run`. A dynamic `cmd` (computed at runtime) is a check error, which is the reason `program` and `cmd` must be literals. This set is an allow-list of which programs may be started. `weir check` also verifies that each program's resolved path lies under a mount in the sandbox, and reports `E-SANDBOX-EXEC-UNREACHABLE` with the fix hint `add mount system, or mount "<dir>" ro` if not. Weir does not add executable or library paths on its own.
 
 **Alternative rejected: requiring an explicit `needs exec` list.** It is redundant with the call graph and goes stale; an inferred set cannot disagree with the code.
 
-### 7.3 Filters narrow the view; components cannot widen it
+### 7.3 Tools narrow the view; components cannot widen it
 
-By default an external program sees the whole sandbox, with every mount in the mode it was declared. A `filter` may narrow what its program sees with `see` lines listing inside paths and a mode:
+By default an external program sees the whole sandbox, with every mount in the mode it was declared. A `tool` may narrow what its program sees with `see` lines listing inside paths and a mode:
 
 ```weir
-filter nginx_test {
+tool nginx_test {
   program "nginx"
   args ["-t"]
   see system
@@ -389,19 +389,19 @@ filter nginx_test {
 | `see <inside> ro\|rw` | the program sees this inside path in this mode |
 | `see system` | the system set |
 
-When a filter has `see` lines the program sees only those paths. Each `see` must name a path that is mounted in the script's sandbox, in that mode or a more permissive one: `see "/data" ro` is satisfied by a `rw` mount of `/data`, and `see "/data" rw` is not satisfied by a `ro` mount. Otherwise the call throws `CapabilityError` naming the filter, the path and the mode, and `weir check` reports it when the paths are literal. A filter therefore never sees more than the script's sandbox, and a `see` clause can only remove access, never add it.
+When a tool has `see` lines the program sees only those paths. Each `see` must name a path that is mounted in the script's sandbox, in that mode or a more permissive one: `see "/data" ro` is satisfied by a `rw` mount of `/data`, and `see "/data" rw` is not satisfied by a `ro` mount. Otherwise the call throws `CapabilityError` naming the tool, the path and the mode, and `weir check` reports it when the paths are literal. A tool therefore never sees more than the script's sandbox, and a `see` clause can only remove access, never add it.
 
-**Components.** Only the entry file has a file-level `sandbox` block of `mount` lines. One in an imported file is an error (`E-SANDBOX-NOT-ENTRY`); a scoped `within` block is allowed ([section 7.3.1](#731-scoped-within-blocks)). Filters in imported components use `see` clauses, and those are their requirements: an imported filter that says `see "/etc/ssl" ro` fails the check against a script that did not mount `/etc/ssl`. A library therefore cannot widen what the script exposes, and the requirements show in the component's manifest.
+**Components.** Only the entry file has a file-level `sandbox` block of `mount` lines. One in an imported file is an error (`E-SANDBOX-NOT-ENTRY`); a scoped `within` block is allowed ([section 7.3.1](#731-scoped-within-blocks)). Tools in imported components use `see` clauses, and those are their requirements: an imported tool that says `see "/etc/ssl" ro` fails the check against a script that did not mount `/etc/ssl`. A library therefore cannot widen what the script exposes, and the requirements show in the component's manifest.
 
 The caller can narrow further with `--ro <inside-path>` (turn a `rw` mount into `ro` for this run) and `--deny-exec <name>`.
 
-**Alternative rejected: a separate sandbox per flow.** It would let one file's flows see different filesystems, but it multiplies the places to read, and a flow calling another flow would need a rule for whose sandbox wins. One file, one sandbox; filters narrow.
+**Alternative rejected: a separate sandbox per flow.** It would let one file's flows see different filesystems, but it multiplies the places to read, and a flow calling another flow would need a rule for whose sandbox wins. One file, one sandbox; tools narrow.
 
 **Alternative rejected: no narrowing at all.** Every wrapped program would see every writable folder the script has, so a network client would have the same write access as the backup tool. Narrowing is cheap because `see` is a subset check.
 
 ### 7.3.1 Scoped `within` blocks
 
-A filter narrows the view for one program. A `within` block inside a flow narrows it for a stretch of the script, and can hand a value back. Its header lists the view, with the same items as a filter's `see` lines, separated by commas:
+A tool narrows the view for one program. A `within` block inside a flow narrows it for a stretch of the script, and can hand a value back. Its header lists the view, with the same items as a tool's `see` lines, separated by commas:
 
 ```weir
 let info = within system, "/etc" ro {
@@ -413,11 +413,11 @@ let info = within system, "/etc" ro {
 print(text: "${info.kernel}: ${info.hosts} lines")
 ```
 
-The word `sandbox` is used only for the file-level block of [section 7.1](#71-the-script-defines-the-sandbox), which defines the script's whole filesystem. A filter writes `see` lines, and a flow writes `within`. All three describe a view, and only the file-level block can mount anything.
+The word `sandbox` is used only for the file-level block of [section 7.1](#71-the-script-defines-the-sandbox), which defines the script's whole filesystem. A tool writes `see` lines, and a flow writes `within`. All three describe a view, and only the file-level block can mount anything.
 
-**What it covers.** While the block runs, the script sees only the listed paths, in the listed modes. This applies to every program started inside it, including programs started by flows and filters called from inside it, and to the built-ins that touch the filesystem (`read_text`, `write`, `exists` and the others). A program sees the path as missing. A built-in that reads or writes it throws `CapabilityError` naming the path and the block's line, and `exists` reports `false`, as it does for any path that is not mounted. When a filter inside the block has `see` lines of its own, its program sees the intersection of the two.
+**What it covers.** While the block runs, the script sees only the listed paths, in the listed modes. This applies to every program started inside it, including programs started by flows and tools called from inside it, and to the built-ins that touch the filesystem (`read_text`, `write`, `exists` and the others). A program sees the path as missing. A built-in that reads or writes it throws `CapabilityError` naming the path and the block's line, and `exists` reports `false`, as it does for any path that is not mounted. When a tool inside the block has `see` lines of its own, its program sees the intersection of the two.
 
-**It can only narrow.** Each item must name a path that the enclosing view has, in that mode or a more permissive one, with the same rule as a filter's `see` ([section 7.3](#73-filters-narrow-the-view-components-cannot-widen-it)); otherwise `weir check` reports `E-SEE-UNMOUNTED` when the paths are literal. Blocks nest, and each level can only narrow the one outside it. `--ro` and `--deny-exec` still apply on top. A `within` block in an imported file is allowed, because it cannot widen anything.
+**It can only narrow.** Each item must name a path that the enclosing view has, in that mode or a more permissive one, with the same rule as a tool's `see` ([section 7.3](#73-tools-narrow-the-view-components-cannot-widen-it)); otherwise `weir check` reports `E-SEE-UNMOUNTED` when the paths are literal. Blocks nest, and each level can only narrow the one outside it. `--ro` and `--deny-exec` still apply on top. A `within` block in an imported file is allowed, because it cannot widen anything.
 
 **`return`.** `return <expr>` inside the block leaves the block with that value. It never returns from the flow, so it cannot be confused with anything else: a flow sets outputs with `set` and has no `return` of its own.
 
@@ -436,7 +436,7 @@ The word `sandbox` is used only for the file-level block of [section 7.1](#71-th
 
 **Alternative rejected: the block's last expression as its value.** A trailing `{ ... }` is ambiguous between a record and a nested block, and an implicit result is easy to produce by accident with a stray last line.
 
-**Alternative rejected: reusing `sandbox` for the block.** One word then meant three things: the whole script's filesystem, a filter's narrowing, and a scope with a value. The header of `within` can also grow other clauses later without renaming it.
+**Alternative rejected: reusing `sandbox` for the block.** One word then meant three things: the whole script's filesystem, a tool's narrowing, and a scope with a value. The header of `within` can also grow other clauses later without renaming it.
 
 ### 7.4 Destructive built-ins
 
@@ -448,7 +448,7 @@ Network access is not a declared capability in v1, and the sandbox does not unsh
 
 ### 7.6 Mechanism and availability
 
-**Mechanism.** The sandbox is a mount namespace entered with `pivot_root`, created through an unprivileged user namespace, so no root is needed. A plain `chroot(2)` is not used: it requires root and is not a security boundary, because a process with root inside a chroot can escape it. Creating a user namespace requires a single-threaded caller, so `weir run` re-executes itself as a small single-threaded stage (`weir __sandbox-run`) that creates the user, mount and PID namespaces, builds the mount table, rebuilds the environment, calls `pivot_root`, and continues as the interpreter inside the sandbox. The interpreter becomes process 1 of the new PID namespace and reaps its children. For a program whose filter has a `sandbox` clause, Weir creates a nested mount namespace for that child and bind-mounts only the `see` paths into it, which a process may do inside its own user namespace.
+**Mechanism.** The sandbox is a mount namespace entered with `pivot_root`, created through an unprivileged user namespace, so no root is needed. A plain `chroot(2)` is not used: it requires root and is not a security boundary, because a process with root inside a chroot can escape it. Creating a user namespace requires a single-threaded caller, so `weir run` re-executes itself as a small single-threaded stage (`weir __sandbox-run`) that creates the user, mount and PID namespaces, builds the mount table, rebuilds the environment, calls `pivot_root`, and continues as the interpreter inside the sandbox. The interpreter becomes process 1 of the new PID namespace and reaps its children. For a program whose tool has a `sandbox` clause, Weir creates a nested mount namespace for that child and bind-mounts only the `see` paths into it, which a process may do inside its own user namespace.
 
 The interpreter must be able to run after the host is gone. The release binary is statically linked (musl) and does not read host libraries once the sandbox is entered.
 
@@ -470,7 +470,7 @@ A script that uses only built-ins and `fn`s still runs in the sandbox when it de
 - a filesystem error inside the sandbox (`ENOENT`, `EROFS`, `EACCES`) on a path outside every mount, or on a read-only mount, is reported with the inside path, the nearest mount and its mode;
 - if a program fails to start because the loader cannot find a library, the error lists the mount table.
 
-`weir sandbox suggest <file>` is a separate tool that reports, for each filter, the executable and library paths it found by reading the binary's ELF dependencies and `#!` interpreter, and prints suggested `mount` and `see` lines. It is a helper for writing the declaration; nothing is derived from it at run time. It cannot see `dlopen`ed libraries or helper programs the tool runs (`git-*`, an `ssh` `ProxyCommand`).
+`weir sandbox suggest <file>` is a separate tool that reports, for each tool, the executable and library paths it found by reading the binary's ELF dependencies and `#!` interpreter, and prints suggested `mount` and `see` lines. It is a helper for writing the declaration; nothing is derived from it at run time. It cannot see `dlopen`ed libraries or helper programs the tool runs (`git-*`, an `ssh` `ProxyCommand`).
 
 `weir run --plan` and `weir list --manifest` print the resolved mount table, with host and inside paths, so what a script exposes can be reviewed without running it.
 
@@ -478,7 +478,7 @@ A script that uses only built-ins and `fn`s still runs in the sandbox when it de
 
 - **Verbosity.** Every script that runs an external program carries a sandbox block, and a wrong one is the author's bug. `mount system` removes the worst of the repetition; it does not remove the need to know that `curl` wants `/etc/ssl` or that `systemctl` wants a socket.
 - **Tools needing unusual paths.** Programs routinely need more than their obvious paths: locale and certificate stores, NSS modules, helper binaries, daemon sockets. Each is a mount the author must find.
-- **Daemon sockets.** `systemctl` and `docker` need their socket mounted `rw`, which punches a hole the sandbox cannot describe. A filter's `see` clause limits which programs get it.
+- **Daemon sockets.** `systemctl` and `docker` need their socket mounted `rw`, which punches a hole the sandbox cannot describe. A tool's `see` clause limits which programs get it.
 - **Single-file mounts.** A file bind-mounted at a path cannot be replaced by rename, only written in place. Built-ins that normally write a temporary file and rename it must write in place when the target is a mount point.
 - **Network confinement** is separate and not included.
 - **Bind mounts expose the real tree.** A `rw` mount is writable in full.
@@ -495,7 +495,7 @@ A script that uses only built-ins and `fn`s still runs in the sandbox when it de
 
 ## 8. Calls and Naming
 
-Every call uses named arguments, in any order, for flows, filters, fns and built-ins alike. There is no positional form.
+Every call uses named arguments, in any order, for flows, tools, fns and built-ins alike. There is no positional form.
 
 ```weir
 copy(from: a, to: b)
@@ -515,7 +515,7 @@ copy(from: a, to: b, overwrite: false)
 
 ## 9. Pipelines
 
-A pipeline is a chain of stages joined with `.`, in the same method-call style used for chaining in most general-purpose languages. A stage is a native stage, a declared filter, or a `run` command. Weir has no `|` operator. The stage on the left supplies the stage on the right with its input: the output of the previous stage, whether that is a program's stdout, a list, or a stream.
+A pipeline is a chain of stages joined with `.`, in the same method-call style used for chaining in most general-purpose languages. A stage is a native stage, a declared tool, or a `run` command. Weir has no `|` operator. The stage on the left supplies the stage on the right with its input: the output of the previous stage, whether that is a program's stdout, a list, or a stream.
 
 ```weir
 journalctl(unit: "sshd").filter(where: ...).take(n: 5)
@@ -525,7 +525,7 @@ A failing stage fails the pipeline, always. There is no `pipefail` switch becaus
 
 **Parsing rules.** `.name(...)` with parentheses is a stage application; `.name` without parentheses is member access (`it.count`, `left.days`). A line that begins with `.` continues the expression on the previous line, so long chains can be laid out one stage per line.
 
-**Why `.` and not `|`.** Programs are never invoked as bare text in Weir: every one is wrapped in a typed `filter` and called with named arguments. Once that is true, `|` no longer means "connect two processes' file descriptors", and it carries bash's associations (and bash's silent-failure semantics). Dot chaining reads like the rest of the language, works identically on a list that is already in memory and on a stream from a program, and is what most programmers and models will expect, so there is less to learn. The cost is that "a stage" and "a method" look the same; the checker resolves the name against native stages and declared filters, and an unknown name is reported with the list of what was in scope.
+**Why `.` and not `|`.** Programs are never invoked as bare text in Weir: every one is wrapped in a typed `tool` and called with named arguments. Once that is true, `|` no longer means "connect two processes' file descriptors", and it carries bash's associations (and bash's silent-failure semantics). Dot chaining reads like the rest of the language, works identically on a list that is already in memory and on a stream from a program, and is what most programmers and models will expect, so there is less to learn. The cost is that "a stage" and "a method" look the same; the checker resolves the name against native stages and declared tools, and an unknown name is reported with the list of what was in scope.
 
 **Alternative rejected: keeping `|` as well.** Two spellings for one thing mean every example and every lint rule has to handle both, and a model will mix them.
 
@@ -579,7 +579,7 @@ use "https://artifactory.example.com/weir/tls.weir@2.1.0#check_expiry"
 
 ### 10.2 Manifests
 
-Each component's header (inputs, outputs, defaults, and the `see` requirements of its filters) is parseable without reading its body. `weir list --manifest <file>` prints it, and for an entry file also prints the resolved mount table. This lets a caller check what a component needs, and lets the checker validate calls, without trusting or executing the component. The inferred executable set is part of the manifest and is computed from the component's own call graph.
+Each component's header (inputs, outputs, defaults, and the `see` requirements of its tools) is parseable without reading its body. `weir list --manifest <file>` prints it, and for an entry file also prints the resolved mount table. This lets a caller check what a component needs, and lets the checker validate calls, without trusting or executing the component. The inferred executable set is part of the manifest and is computed from the component's own call graph.
 
 **Alternative rejected: unpinned `use` of a branch.** A moving dependency makes `weir check` results time-dependent.
 
@@ -602,7 +602,7 @@ A file-level `sandbox` block's `in` values generate flags in the same way ([sect
 
 - `--confirm`: run `confirmable` steps.
 - `--plan`: print what would happen and run nothing.
-- `--ro INSIDE_PATH`, `--deny-exec NAME`: narrow the sandbox for this run: turn a `rw` mount into `ro`, or refuse to start a program ([section 7.3](#73-filters-narrow-the-view-components-cannot-widen-it)).
+- `--ro INSIDE_PATH`, `--deny-exec NAME`: narrow the sandbox for this run: turn a `rw` mount into `ro`, or refuse to start a program ([section 7.3](#73-tools-narrow-the-view-components-cannot-widen-it)).
 - `--sandbox <required|auto|off>`: what to do when the filesystem sandbox cannot be created ([section 7.6](#76-mechanism-and-availability)); `WEIR_SANDBOX` sets the same. `--no-sandbox` is `--sandbox off`. Running without the sandbox prints a warning on stderr and works only for scripts whose mounts all map a path to itself. Not settable from a script.
 
 ### 11.2 Input flags
@@ -629,7 +629,7 @@ Diagnostics and logs always go to stderr. The `--json` document includes `"sandb
 
 ## 12. Testing
 
-A `test` declaration runs under `weir test` against fixtures: a temporary directory tree, and stubs for filters.
+A `test` declaration runs under `weir test` against fixtures: a temporary directory tree, and stubs for tools.
 
 ```weir
 test "ip_of takes the first field" {
@@ -646,7 +646,7 @@ test "ban_noisy_clients writes only offenders" {
 }
 ```
 
-A stub can name arguments, `stub tail(file: "/var/log/a") yields lines: [...]`, and then it answers only calls that pass those values. When several stubs match a call they answer in turn, the first call getting the first, and the last answering every call after. A filter that yields `none` is stubbed with `stub f yields none`.
+A stub can name arguments, `stub tail(file: "/var/log/a") yields lines: [...]`, and then it answers only calls that pass those values. When several stubs match a call they answer in turn, the first call getting the first, and the last answering every call after. A tool that yields `none` is stubbed with `stub f yields none`.
 
 Tests never touch the real filesystem or run real programs unless a test explicitly opts in. Each test runs in its own sandbox made of its fixtures, with each `fixture dir` appearing at its stated path, so a flow under test sees only what the test gave it. `fn` tests need no fixtures. This section is deliberately thin; fixture semantics are listed as an open question.
 
@@ -666,7 +666,7 @@ sandbox {
   mount "/run/dbus/system_bus_socket" rw
 }
 
-filter tail {
+tool tail {
   program "tail"
   in file: path
   in n: int
@@ -677,7 +677,7 @@ filter tail {
   yields lines
 }
 
-filter nginx_test {
+tool nginx_test {
   program "nginx"
   args ["-t"]
   see system
@@ -687,7 +687,7 @@ filter nginx_test {
   yields none
 }
 
-filter systemctl {
+tool systemctl {
   program "systemctl"
   in action: enum(reload, restart, status)
   in unit: string
@@ -763,7 +763,7 @@ Points worth noting:
 
 - The script's whole filesystem is the `sandbox` block. `tail`, `nginx` and `systemctl` each see only their `see` paths, which must be mounted in the sandbox in at least that mode. The backup file lands next to the blocklist, in `/etc/nginx/conf.d`, which is mounted `rw`, so the `copy` succeeds. Had it been written to `/etc/nginx/blocklist.bak`, that path falls under the `ro` mount of `/etc/nginx`, the write fails with a read-only error, and the message names the mount and its mode. Producing that message is the kind of thing the runtime must get right.
 - The inferred executable set is `{tail, nginx, systemctl}`. `weir check` confirms each resolves under the mounts the program sees (`mount system` covers `/usr/bin` and `/usr/sbin`). A caller can see the resolved mount table with `weir list --manifest`, and `weir run --plan` prints it. Passing `--log /var/log/nginx/access.log.1` works because that host path falls under the `/var/log/nginx` mount.
-- The `systemctl` socket mount is a real hole in the sandbox: it is writable, and `systemd` will act on requests sent through it. The sandbox cannot describe that. The `see` clauses limit it to the one filter that needs it, and the mount is visible at the top of the script.
+- The `systemctl` socket mount is a real hole in the sandbox: it is writable, and `systemd` will act on requests sent through it. The sandbox cannot describe that. The `see` clauses limit it to the one tool that needs it, and the mount is visible at the top of the script.
 - The flow is safe to run from cron. Without `--confirm` it updates the blocklist and validates it, then reports `reload: skipped: unconfirmed`. An operator can follow with `weir run ban_noisy_clients.weir --confirm`, or put `--confirm` in the cron line once they trust it.
 - If `nginx_test()` fails the flow fails with exit 1 and the `.bak` file is left in place. A production version would restore the backup in a `catch`; it is omitted here to keep the example short.
 - `tail(...).filter(...).count_by(...)` streams until `count_by`, which buffers one counter per distinct IP, then `sort_by` buffers the resulting (smaller) set. The log itself is never held in memory.
@@ -778,7 +778,7 @@ sandbox {
   mount system                       // openssl and date, /etc/ssl, resolver config
 }
 
-filter s_client {
+tool s_client {
   program "openssl"
   in host: string
   in port: int = 443
@@ -788,7 +788,7 @@ filter s_client {
   ok_codes [0]
 }
 
-filter x509_enddate {
+tool x509_enddate {
   program "openssl"
   args ["x509", "-noout", "-enddate"]
   takes text
@@ -796,7 +796,7 @@ filter x509_enddate {
   ok_codes [0]
 }
 
-filter epoch_of {
+tool epoch_of {
   program "date"
   in stamp: string
   args ["-u", "-d", stamp, "+%s"]
@@ -864,7 +864,7 @@ Points worth noting:
 - `try` around the pipeline means an unreachable host does not abort the loop, but the failure is still recorded and still produces a non-zero exit at the end. Tolerance is local and explicit; the final `fail` restores the default.
 - With `--json`, a failing run still emits `results`, because `set results = rows` ran before `fail`. A monitoring system gets both the exit code 1 and the full table.
 - `probe as host` gives each iteration the identity `probe[i] "<host>"` in the plan, the log, and the `steps` array of the JSON output.
-- The sandbox is just `mount system`. The flow touches no files of its own, and its filters have no `see` clause, so `openssl` and `date` see the system set, including `/etc/ssl`, `/etc/resolv.conf` and `/etc/hosts`, and nothing else. Their capability set is `{openssl, date}`. The network reach of `openssl` is not bounded by the sandbox ([section 7.5](#75-not-covered)).
+- The sandbox is just `mount system`. The flow touches no files of its own, and its tools have no `see` clause, so `openssl` and `date` see the system set, including `/etc/ssl`, `/etc/resolv.conf` and `/etc/hosts`, and nothing else. Their capability set is `{openssl, date}`. The network reach of `openssl` is not bounded by the sandbox ([section 7.5](#75-not-covered)).
 - `classify` is a `fn`, so it is testable without stubs.
 
 ## 15. Grammar Sketch
@@ -875,7 +875,7 @@ This is a sketch, not a complete grammar. Whitespace is insignificant except as 
 file        = { use_decl } [ sandbox_block ] { declaration } ;
 use_decl    = "use" string ;
 
-declaration = flow | filter | fn | test ;
+declaration = flow | tool | fn | test ;
 
 flow        = [ "main" | "private" ] "flow" ident "{" { flow_item } "}" ;
 flow_item   = in_decl | out_decl | requires | lock
@@ -886,14 +886,14 @@ out_decl    = "out" ident ":" type ;
 sandbox_block  = "sandbox" "{" { in_decl | mount } "}" ;     (* entry file only *)
 mount       = "mount" ( "system"
                       | expr [ "at" expr ] ( "ro" | "rw" ) ) ;
-see         = "see" see_item ;                              (* in a filter, one per line *)
+see         = "see" see_item ;                              (* in a tool, one per line *)
 see_item    = "system" | expr ( "ro" | "rw" ) ;
 requires    = "requires" expr ;
 lock        = "lock" expr ;
 finally     = "finally" block ;
 
-filter      = "filter" ident "{" { filter_item } "}" ;
-filter_item = "program" string
+tool      = "tool" ident "{" { tool_item } "}" ;
+tool_item = "program" string
             | in_decl
             | "args" list_lit
             | see
@@ -925,7 +925,7 @@ modifier    = "when" expr | "confirmable" ;
 
 expr        = postfix ;
 postfix     = primary { "." ident [ "(" [ arg { "," arg } ] ")" ] } ;
-                                             (* with parens: a stage (native, filter or run);
+                                             (* with parens: a stage (native, tool or run);
                                                 without: member access.
                                                 A line starting with "." continues the previous one. *)
 primary     = call | ident | literal | "(" expr ")" | if_expr | within_block ;
@@ -943,13 +943,13 @@ Operator precedence, high to low: member access `.`, unary `not` and `-`, `*` `/
 ```text
 absent       and          args         as           at           catch
 confirmable  else         enum         env          expect       explicit
-fail         false        filter       finally      fixture      flow
-fn           for          if           in           it           json
-let          lines        lock         main         mount        none
-not          ok_codes     or           out          private      program
-requires     return       ro           run          rw           sandbox
-secret       see          set          stub         system       takes
-test         text         true         try          use          var
+fail         false        finally      fixture      flow         fn
+for          if           in           it           json         let
+lines        lock         main         mount        none         not
+ok_codes     or           out          private      program      requires
+return       ro           run          rw           sandbox      secret
+see          set          stub         system       takes        test
+text         tool         true         try          use          var
 when         within       yields
 ```
 
@@ -973,7 +973,7 @@ The reference implementation is intended to be written in Rust. File extension: 
 
 - **Single static binary.** Rust produces one self-contained executable that can be copied to a host that has none of the toolchain, which matters for a tool that replaces bash on arbitrary hosts.
 - **Hand-written recursive-descent parser.** Parser generators give weak error messages and weak recovery. Since error quality is the product ([section 19](#19-open-questions-and-known-weaknesses)), the parser is written by hand to control the spans, the expected-token lists, and recovery so that one mistake does not produce a cascade.
-- **Direct process spawning.** Commands are spawned with an argument vector and no shell. On Linux the interpreter enters the sandbox once, at startup of a run, by re-executing itself as a single-threaded stage (`weir __sandbox-run`) that creates the user, mount and PID namespaces, builds the declared mount table (plus the fixed `/tmp`, `/dev` and `/proc`), rebuilds the environment, calls `pivot_root`, and continues as the interpreter. The stage is needed because `unshare(CLONE_NEWUSER)` requires a single-threaded process. The release binary is statically linked (musl) so it needs nothing from the host once inside. As PID 1 of the new PID namespace the interpreter must reap orphaned children. Filters with a `see` clause start their program in a nested mount namespace. Namespace and mount calls go through `libc` or `nix`. Dependency discovery for `weir sandbox suggest` reads the ELF headers directly rather than invoking `ldd`, which executes the binary.
+- **Direct process spawning.** Commands are spawned with an argument vector and no shell. On Linux the interpreter enters the sandbox once, at startup of a run, by re-executing itself as a single-threaded stage (`weir __sandbox-run`) that creates the user, mount and PID namespaces, builds the declared mount table (plus the fixed `/tmp`, `/dev` and `/proc`), rebuilds the environment, calls `pivot_root`, and continues as the interpreter. The stage is needed because `unshare(CLONE_NEWUSER)` requires a single-threaded process. The release binary is statically linked (musl) so it needs nothing from the host once inside. As PID 1 of the new PID namespace the interpreter must reap orphaned children. Tools with a `see` clause start their program in a nested mount namespace. Namespace and mount calls go through `libc` or `nix`. Dependency discovery for `weir sandbox suggest` reads the ELF headers directly rather than invoking `ldd`, which executes the binary.
 - **Alternative considered: Go.** Equally capable of a static binary and quicker to write. Rust is preferred for the sum types and exhaustive matching that the checker's data model (types, capabilities, findings) benefits from. This is a preference, not a hard constraint, and the choice does not affect the language.
 
 ## 19. Open Questions and Known Weaknesses
@@ -988,7 +988,7 @@ The named-argument rule helps here (there are fewer ways to be wrong) but does n
 
 ### 19.2 Language surface versus "simpler than bash"
 
-The goal is a language simpler than bash for the target scripts. Counting the concepts in this document: four declarations, nine header or step modifiers, eleven types and forms, structured errors, a mandatory filesystem sandbox that the entry file defines mount by mount, with `see` narrowing in filters and an escape flag, a lockfile, a fixture system, and a native-stage vocabulary. That is not obviously smaller than bash plus a linter, and a reader could reasonably call it larger. Bash is bad, but it is small.
+The goal is a language simpler than bash for the target scripts. Counting the concepts in this document: four declarations, nine header or step modifiers, eleven types and forms, structured errors, a mandatory filesystem sandbox that the entry file defines mount by mount, with `see` narrowing in tools and an escape flag, a lockfile, a fixture system, and a native-stage vocabulary. That is not obviously smaller than bash plus a linter, and a reader could reasonably call it larger. Bash is bad, but it is small.
 
 The bet is that these concepts are each individually easy and rarely interact, and that the checker removes the need to learn the sharp edges. That is unverified. Candidates for removal if the surface proves too large: `lock` (a built-in could do it), `requires` (an `if ... fail` does the same), records as a distinct type (use maps), the `finally` block.
 
@@ -996,7 +996,7 @@ The bet is that these concepts are each individually easy and rarely interact, a
 
 - **Structural record types** appear in the type table. They are needed for `count_by` output and parsed JSON, but they make Weir's type system larger than the "distinct types" list in the brief. An alternative is `map<string, T>` throughout, at the cost of heterogeneous rows.
 - **`set` for outputs and `try` as an attempt record** are syntactic choices made here without much competition from alternatives.
-- **The filesystem sandbox** ([section 7](#7-capabilities)) with a file-level `sandbox` block, host-to-inside remapping, and `see` clauses on filters are not in the original brief. They replace the brief's `needs read` and `needs write`, which Weir could only have enforced on its own built-ins. The sandbox also changes how `path` inputs behave on the command line.
+- **The filesystem sandbox** ([section 7](#7-capabilities)) with a file-level `sandbox` block, host-to-inside remapping, and `see` clauses on tools are not in the original brief. They replace the brief's `needs read` and `needs write`, which Weir could only have enforced on its own built-ins. The sandbox also changes how `path` inputs behave on the command line.
 - **Scoped `within` blocks** ([section 7.3.1](#731-scoped-within-blocks)) narrow the view for part of a flow and use `return` for a value. They are an addition after the first interpreter, not part of the original design.
 - **`$` in `...$list`** appears only in spread. Variables are otherwise bare. It is inconsistent and should probably be `...list`.
 
@@ -1017,17 +1017,17 @@ The bet is that these concepts are each individually easy and rarely interact, a
 ### 19.5 Weaknesses in the design as it stands
 
 - **`--plan` cannot be complete.** It does not execute commands, so any control flow depending on a command's output cannot be resolved. The plan shows both branches annotated with the condition, which can overstate what will happen. A plan is a conservative superset of effects, not a prediction. Whether this is useful enough in practice is open.
-- **Dot chaining blurs stage and method.** `.filter(...)` could be a native stage, a declared filter of the same name, or a future method on a type. Name resolution order must be fixed (declared filters shadowing natives is probably wrong) and the error for an unknown name must list candidates.
-- **Pipeline early termination.** Distinguishing "closed by `take`" from a real failure across platforms and programs is delicate. Some programs report a broken pipe with a distinct code, some with a message, some hang. This may need a per-filter declaration.
+- **Dot chaining blurs stage and method.** `.filter(...)` could be a native stage, a declared tool of the same name, or a future method on a type. Name resolution order must be fixed (declared tools shadowing natives is probably wrong) and the error for an unknown name must list candidates.
+- **Pipeline early termination.** Distinguishing "closed by `take`" from a real failure across platforms and programs is delicate. Some programs report a broken pipe with a distinct code, some with a message, some hang. This may need a per-tool declaration.
 - **`confirmable` semantics for dependent steps.** If a later step depends on the skipped step's effect, running it is wrong. The current rule only skips the one step. A `needs_step` dependency or a rule that skips all later steps in the flow is needed.
 - **`fn` purity versus reading the clock.** `now_epoch()` is not allowed in a `fn`, so time-dependent logic must be passed in as an argument. This is correct and mildly annoying.
-- **Secrets in filters.** `env { NAME = token }` is the only route for a secret to a program besides stdin. Some programs accept credentials only on argv. Those cannot be wrapped safely, and the design offers no answer beyond "write a wrapper".
+- **Secrets in tools.** `env { NAME = token }` is the only route for a secret to a program besides stdin. Some programs accept credentials only on argv. Those cannot be wrapped safely, and the design offers no answer beyond "write a wrapper".
 - **Network is outside the capability model.**
 - **The sandbox is Linux-only and may be unavailable.** It depends on unprivileged user namespaces, which are disabled on some hardened hosts and forbidden in some containers. There the run exits 4 unless the operator chooses `--sandbox auto` or `off`, which work only for scripts without remapping mounts. macOS and the BSDs have no v1 sandbox, so any script that runs an external program is Linux-only in practice. For a language meant to replace bash everywhere, this is a significant limit. Whether to accept it, or to add a weaker non-Linux backend, is open.
 - **Command-line paths are translated, not taken literally.** An operator passes host paths and the script sees inside paths, so an error message that mentions a path must say which kind. A path that is not under any mount fails with exit 2 before the script starts. Translating paths in `list<path>` inputs and in paths embedded in other values (a URL, a config file) is not possible; a program given a host path inside a string will not find it.
 - **The interpreter lives inside the sandbox it enforces.** A bug that lets a script call a built-in on a path outside the mount table is not possible by construction, but a bug in the pre-sandbox stage (path translation, lockfile verification, secret reading) happens outside it and has host access. That stage is the part of the interpreter that must be small and audited.
 - **Script-defined mounts are verbose and easy to get wrong.** Programs need paths nobody thinks of: certificate stores, locale data, NSS modules, helper binaries, daemon sockets. Because the author lists the mounts, a missing one is the author's bug and shows up as a program failing to start or to find a library. `mount system`, the `E-SANDBOX-EXEC-UNREACHABLE` check and `weir sandbox suggest` are the mitigations. If authors find this too burdensome they will either mount broadly (a script cannot mount `/` at all, but `/usr`, `/etc` and `/var` are not so limited) or run with `--no-sandbox`, and the guarantee shrinks to nothing. Whether explicit mounts or automatic derivation yields better real-world sandboxs is open; the design chose explicit and records the alternative in section 7.6.
-- **Fixtures are under-specified.** Stubbing at the filter level does not test the real program's behaviour, and the fixture language for directory trees is only sketched.
+- **Fixtures are under-specified.** Stubbing at the tool level does not test the real program's behaviour, and the fixture language for directory trees is only sketched.
 - **Naming strictness has a cost.** Named-only calls make short scripts noticeably longer than their bash equivalents. This may hurt adoption for one-liners, which are a large share of what bash is used for. A `weir -e` one-liner mode is not designed.
 
 ### 19.6 Checker rules that are expensive to implement
@@ -1039,13 +1039,13 @@ Roughly in order of cost:
 3. **Pipeline element-type inference** through generic stages with `it`. Requires bidirectional inference and good error messages when it fails, which is hard because the error appears far from the cause.
 4. **`secret` flow analysis.** Tracking that no expression derived from a `secret` reaches an argument list, an interpolation, a file write or an output. Has to follow values through `fn` returns and record fields.
 5. **`W-DEFAULT-ARG` with constant folding.** Detecting that an argument equals the default needs evaluation of constant expressions, including durations and path joins.
-6. **Exhaustiveness of `catch` and reachability of thrown types.** Needs each built-in and each filter to declare which errors it may throw.
+6. **Exhaustiveness of `catch` and reachability of thrown types.** Needs each built-in and each tool to declare which errors it may throw.
 7. **Dependency discovery for `weir sandbox suggest`.** Reading ELF headers for `DT_NEEDED` entries, following `RPATH`/`RUNPATH` and the loader search path, resolving `#!` chains, and doing so identically to what the dynamic loader will do at run time. Anything loaded with `dlopen` is invisible and has to be found by the author. It is not on the run-time path, so a mistake costs a bad suggestion, not a wrong sandbox. The `E-SANDBOX-EXEC-UNREACHABLE` check is a smaller version of the same problem: resolving `program` through `PATH` and symlinks the way the runtime will.
 8. **Purity checking of `fn`.** Cheap on its own, but must be re-run through every imported `fn` and built-in, so every built-in needs a purity annotation that stays correct.
 
 ### 19.7 Questions not yet decided
 
-- Should `use` allow importing a `fn` or `filter` on its own, or only flows? The manifest model currently assumes flows, but filters are the most reusable thing.
+- Should `use` allow importing a `fn` or `tool` on its own, or only flows? The manifest model currently assumes flows, but tools are the most reusable thing.
 - How are exit codes from nested flow calls reflected in `--json` `steps`? One failure should not produce a confusing cascade of "failed" entries.
 - Should a sandbox block be allowed to `include` a shared set of mounts from a component (a `mount web_server` preset), or is `mount system` the only built-in shorthand? Presets would cut repetition and add a fifth thing to define and import.
 - Should `ok_codes` allow named meanings (for example, `grep` code 1 meaning "no match" and so `yields` an empty result), rather than only a list of numbers?

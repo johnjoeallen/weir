@@ -18,10 +18,10 @@ sandbox {
 }
 
 // ---------------------------------------------------------------------------
-// Declared filters
+// Declared tools
 // ---------------------------------------------------------------------------
 
-filter cat_file {
+tool cat_file {
   program "cat"
   in file: path
   args ["--", file]
@@ -31,7 +31,7 @@ filter cat_file {
   yields lines
 }
 
-filter zcat_file {
+tool zcat_file {
   program "zcat"
   in file: path
   args ["--", file]
@@ -41,7 +41,7 @@ filter zcat_file {
   yields lines
 }
 
-filter date_epoch {
+tool date_epoch {
   program "date"
   in stamp: string
   args ["-u", "-d", stamp, "+%s"]    // GNU date; stamp is "YYYY-MM-DD HH:MM:SS"

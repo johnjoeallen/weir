@@ -214,14 +214,14 @@ fn cmd_list(args: &[String]) -> i32 {
             }
             Err(e) => println!("mounts: {e}"),
         }
-        println!("programs a filter may start:");
-        let mut progs: Vec<&str> = f.filters().map(|x| x.program.as_str()).collect();
+        println!("programs a tool may start:");
+        let mut progs: Vec<&str> = f.tools().map(|x| x.program.as_str()).collect();
         progs.sort();
         progs.dedup();
         for p in progs {
             println!("  {p}");
         }
-        for fl in f.filters() {
+        for fl in f.tools() {
             if let Some(sees) = &fl.see {
                 let desc: Vec<String> = sees
                     .iter()
@@ -230,7 +230,7 @@ fn cmd_list(args: &[String]) -> i32 {
                         See::Path { path, mode } => format!("{} {}", crate::pretty::show_expr(path), mode.word()),
                     })
                     .collect();
-                println!("filter {} sees: {}", fl.name, desc.join(", "));
+                println!("tool {} sees: {}", fl.name, desc.join(", "));
             }
         }
     }
@@ -1033,12 +1033,12 @@ fn run_test(prog: &Program, t: &Test) -> Result<(), String> {
         interp.test_mode = true;
         let mut frame = interp.test_frame(0);
         for item in &t.items {
-            if let TestItem::Stub { filter, when, yields, .. } = item {
+            if let TestItem::Stub { tool, when, yields, .. } = item {
                 let v = match yields {
                     Some(y) => interp.test_eval(y, &mut frame).map_err(|e| describe_ctl(&e))?,
                     None => Value::Absent,
                 };
-                let f = prog.files[0].file.filters().find(|f| &f.name == filter);
+                let f = prog.files[0].file.tools().find(|f| &f.name == tool);
                 if let Some(f) = f {
                     let expect = match f.yields {
                         IoKind::Lines => Some(Ty::List(Box::new(Ty::Str))),
@@ -1046,7 +1046,7 @@ fn run_test(prog: &Program, t: &Test) -> Result<(), String> {
                         _ => None,
                     };
                     if let Some(ty) = expect {
-                        conforms(&v, &ty).map_err(|e| format!("the stub for `{filter}` yields {}, so it must be a {}: {e}", f.yields.word(), ty.show()))?;
+                        conforms(&v, &ty).map_err(|e| format!("the stub for `{tool}` yields {}, so it must be a {}: {e}", f.yields.word(), ty.show()))?;
                     }
                 }
                 let mut conds = Vec::new();
@@ -1054,7 +1054,7 @@ fn run_test(prog: &Program, t: &Test) -> Result<(), String> {
                     let val = interp.test_eval(&a.expr, &mut frame).map_err(|e| describe_ctl(&e))?;
                     conds.push((a.name.clone().unwrap_or_default(), val));
                 }
-                interp.stubs.push(StubEntry { filter: filter.clone(), when: conds, value: v, used: false });
+                interp.stubs.push(StubEntry { tool: tool.clone(), when: conds, value: v, used: false });
             }
         }
         for item in &t.items {

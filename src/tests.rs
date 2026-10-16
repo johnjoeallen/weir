@@ -83,7 +83,7 @@ fn parser_reports_stable_codes() {
     assert_eq!(code("fn f(x: int) { return x }"), "E-SYNTAX");
     assert_eq!(code("main flow a {\n  let in = 1\n}"), "E-RESERVED-WORD");
     assert_eq!(code("main flow a {\n  try {\n  }\n}"), "E-TRY-NO-CATCH");
-    assert_eq!(code("filter f {\n  in x: string\n}"), "E-FILTER-PROGRAM");
+    assert_eq!(code("tool f {\n  in x: string\n}"), "E-TOOL-PROGRAM");
     assert_eq!(code("print(text: \"x\")"), "E-SYNTAX");
 }
 
@@ -170,7 +170,7 @@ fn optional_must_be_unwrapped() {
 
 #[test]
 fn try_returns_an_attempt_record_and_catch_matches_by_type() {
-    let src = r#"filter boom {
+    let src = r#"tool boom {
   program "false"
   yields none
 }

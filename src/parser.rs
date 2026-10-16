@@ -6,10 +6,10 @@ use crate::diag::Diag;
 use crate::lexer::{lex, StrPart, Tok, Token};
 
 pub const RESERVED: &[&str] = &[
-    "absent", "and", "args", "as", "at", "catch", "confirmable", "else", "enum", "env", "expect", "explicit", "false", "fail",
-    "filter", "finally", "fixture", "flow", "fn", "for", "if", "in", "it", "json", "let", "lines", "lock", "main",
-    "mount", "none", "not", "ok_codes", "or", "out", "private", "program", "requires", "return", "ro", "run", "rw",
-    "sandbox", "secret", "see", "set", "stub", "system", "takes", "test", "text", "true", "try", "use", "var", "when", "within",
+    "absent", "and", "args", "as", "at", "catch", "confirmable", "else", "enum", "env", "expect", "explicit", "fail",
+    "false", "finally", "fixture", "flow", "fn", "for", "if", "in", "it", "json", "let", "lines", "lock", "main", "mount",
+    "none", "not", "ok_codes", "or", "out", "private", "program", "requires", "return", "ro", "run", "rw", "sandbox",
+    "secret", "see", "set", "stub", "system", "takes", "test", "text", "tool", "true", "try", "use", "var", "when", "within",
     "yields",
 ];
 
@@ -220,9 +220,9 @@ impl Parser {
         if vis != Vis::Normal {
             return Err(self.unexpected("`flow` after `main`/`private`"));
         }
-        if self.is_kw("filter") {
+        if self.is_kw("tool") {
             self.advance();
-            return Ok(Decl::Filter(self.filter(span)?));
+            return Ok(Decl::Tool(self.tool(span)?));
         }
         if self.is_kw("fn") {
             self.advance();
@@ -234,7 +234,7 @@ impl Parser {
         }
         Err(self.err_here(
             "E-SYNTAX",
-            format!("expected a declaration (`flow`, `filter`, `fn` or `test`), found {}", self.tok().describe()),
+            format!("expected a declaration (`flow`, `tool`, `fn` or `test`), found {}", self.tok().describe()),
             Some("a file's top level holds declarations only; put statements inside a flow"),
         ))
     }
@@ -416,10 +416,10 @@ impl Parser {
         Ok(fl)
     }
 
-    fn filter(&mut self, span: Span) -> PResult<Filter> {
-        let name = self.name("a filter name")?;
+    fn tool(&mut self, span: Span) -> PResult<Tool> {
+        let name = self.name("a tool name")?;
         self.expect(Tok::LBrace)?;
-        let mut f = Filter {
+        let mut f = Tool {
             name,
             program: String::new(),
             program_span: span,
@@ -467,13 +467,13 @@ impl Parser {
             } else if self.eat_kw("args") {
                 f.args = self.list_lit()?;
             } else if self.is_kw("see") {
-                // `see` lines sit directly in the filter; the first one makes the view restricted.
+                // `see` lines sit directly in the tool; the first one makes the view restricted.
                 f.see.get_or_insert_with(Vec::new).push(self.see_item()?);
             } else if self.is_kw("sandbox") {
                 return Err(self.err_here(
-                    "E-FILTER-SANDBOX",
-                    "a filter no longer has a `sandbox` block".into(),
-                    Some("write the `see` lines directly in the filter, for example `see system` and `see \"/var/log\" ro`"),
+                    "E-TOOL-SANDBOX",
+                    "a tool no longer has a `sandbox` block".into(),
+                    Some("write the `see` lines directly in the tool, for example `see system` and `see \"/var/log\" ro`"),
                 ));
             } else if self.eat_kw("env") {
                 self.expect(Tok::LBrace)?;
@@ -503,8 +503,8 @@ impl Parser {
             } else {
                 return Err(self.err_here(
                     "E-SYNTAX",
-                    format!("expected a filter clause, found {}", self.tok().describe()),
-                    Some("a filter has: program, in, args, see, env, takes, yields, ok_codes"),
+                    format!("expected a tool clause, found {}", self.tok().describe()),
+                    Some("a tool has: program, in, args, see, env, takes, yields, ok_codes"),
                 ));
             }
             self.end_stmt()?;
@@ -512,7 +512,7 @@ impl Parser {
         }
         self.expect(Tok::RBrace)?;
         if !have_program {
-            return Err(self.err_at(span, "E-FILTER-PROGRAM", format!("filter `{}` has no `program`", f.name), Some("add program \"<executable>\"")));
+            return Err(self.err_at(span, "E-TOOL-PROGRAM", format!("tool `{}` has no `program`", f.name), Some("add program \"<executable>\"")));
         }
         Ok(f)
     }
@@ -523,7 +523,7 @@ impl Parser {
         self.view_item()
     }
 
-    /// `system` or `<path> ro|rw`: an entry of a view, as in a filter's `see` line or a `within` header.
+    /// `system` or `<path> ro|rw`: an entry of a view, as in a tool's `see` line or a `within` header.
     fn view_item(&mut self) -> PResult<(See, Span)> {
         let ssp = self.span();
         if self.eat_kw("system") {
@@ -620,7 +620,7 @@ impl Parser {
                 items.push(TestItem::Fixture { dir, items: fitems, span: sp });
                 self.end_stmt()?;
             } else if self.eat_kw("stub") {
-                let filter = self.any_ident("a filter name")?;
+                let tool = self.any_ident("a tool name")?;
                 let when = if self.is(&Tok::LParen) { self.args()? } else { Vec::new() };
                 self.expect_kw("yields")?;
                 let yields = if self.io_kind()? == IoKind::None {
@@ -629,7 +629,7 @@ impl Parser {
                     self.expect(Tok::Colon)?;
                     Some(self.expr()?)
                 };
-                items.push(TestItem::Stub { filter, when, yields, span: sp });
+                items.push(TestItem::Stub { tool, when, yields, span: sp });
                 self.end_stmt()?;
             } else {
                 items.push(TestItem::Stmt(self.stmt()?));

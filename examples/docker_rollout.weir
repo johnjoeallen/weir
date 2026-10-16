@@ -7,7 +7,7 @@
 // A port of wowu/docker-rollout. It starts new containers next to the old ones, waits for them to be
 // healthy, then stops and removes the old ones; if the new ones never become healthy it removes them
 // and fails. Differences from the shell version:
-//   - the Docker socket is an `explicit` mount, so only the two filters that ask for it can reach it;
+//   - the Docker socket is an `explicit` mount, so only the two tools that ask for it can reach it;
 //     the Docker daemon is root on the host, and nothing else in this script needs to see it;
 //   - the pre-stop hooks run one after another, where the shell version backgrounds them with `&`;
 //   - a compose file must be inside the project folder, which is mounted read-only at its own path
@@ -21,11 +21,11 @@ sandbox {
 }
 
 // ---------------------------------------------------------------------------
-// Filters
+// Tools
 // ---------------------------------------------------------------------------
 
 // `docker <args>`
-filter docker {
+tool docker {
   program "docker"
   in words: list<string>
   args [...$words]
@@ -36,7 +36,7 @@ filter docker {
 }
 
 // `docker compose <global options> <subcommand>`; the global options come before the subcommand.
-filter compose {
+tool compose {
   program "docker"
   in project: path
   in global: list<string>
@@ -49,7 +49,7 @@ filter compose {
   yields lines
 }
 
-filter sleep_seconds {
+tool sleep_seconds {
   program "sleep"
   in seconds: int
   args [string(value: seconds)]
@@ -59,7 +59,7 @@ filter sleep_seconds {
 }
 
 // 1, 2, ... n, one per line: a counted loop to poll in.
-filter count_to {
+tool count_to {
   program "seq"
   in n: int
   args ["1", string(value: n)]
@@ -224,7 +224,7 @@ test "a service that is not running is started" {
   expect r.replaced == 0
 }
 
-// The same filter answers differently by its arguments, and in turn when the arguments repeat.
+// The same tool answers differently by its arguments, and in turn when the arguments repeat.
 test "a healthy replacement stops and removes the old container" {
   stub compose(words: ["ps", "-a", "--quiet", "web"]) yields lines: ["old"]
   stub compose(words: ["ps", "--quiet", "web"]) yields lines: ["old"]       // before scaling up

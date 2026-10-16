@@ -79,7 +79,7 @@ fn stubs_match_arguments_and_answer_in_turn() {
     std::fs::write(
         &f,
         r#"sandbox { mount system }
-filter echo_it {
+tool echo_it {
   program "echo"
   in word: string
   args [word]
@@ -110,7 +110,7 @@ test "a call no stub matches fails" {
     let bad = dir.join("bad.weir");
     std::fs::write(
         &bad,
-        "sandbox { mount system }\nfilter e {\n  program \"echo\"\n  in w: string\n  args [w]\n  takes none\n  yields lines\n}\ntest \"t\" {\n  stub e(x: 1) yields lines: []\n}\n",
+        "sandbox { mount system }\ntool e {\n  program \"echo\"\n  in w: string\n  args [w]\n  takes none\n  yields lines\n}\ntest \"t\" {\n  stub e(x: 1) yields lines: []\n}\n",
     )
     .unwrap();
     let c = weir_args(&["check", bad.to_str().unwrap()]);
@@ -290,7 +290,7 @@ fn sandbox_confines_programs_when_available() {
   mount system
   mount "{d}" ro
 }}
-filter sh {{
+tool sh {{
   program "sh"
   in script: string
   args ["-c", script]
@@ -347,14 +347,14 @@ fn explicit_mount_is_reached_only_by_request() {
   mount "{o}" ro
   mount "{v}" at "{iv}" ro explicit
 }}
-filter sh_default {{
+tool sh_default {{
   program "sh"
   in script: string
   args ["-c", script]
   yields lines
   ok_codes [0, 1, 2]
 }}
-filter sh_asks {{
+tool sh_asks {{
   program "sh"
   in script: string
   args ["-c", script]
@@ -468,7 +468,7 @@ fn see_lines_and_within_blocks_work_without_the_sandbox() {
     std::fs::write(shown.join("a.txt"), "in-view\n").unwrap();
     std::fs::write(hidden.join("b.txt"), "out-of-view\n").unwrap();
     let src = format!(
-        r#"filter sh_view {{
+        r#"tool sh_view {{
   program "sh"
   in script: string
   args ["-c", script]
@@ -477,7 +477,7 @@ fn see_lines_and_within_blocks_work_without_the_sandbox() {
   yields lines
   ok_codes [0, 1, 2]
 }}
-filter sh_all {{
+tool sh_all {{
   program "sh"
   in script: string
   args ["-c", script]
@@ -590,7 +590,7 @@ fn a_read_only_mount_may_contain_the_system_files() {
 }
 
 #[test]
-fn a_filter_sees_only_the_paths_in_its_see_block() {
+fn a_tool_sees_only_the_paths_in_its_see_block() {
     let base = scratch().join(format!("weir-see-it-{}", std::process::id()));
     let (a, b) = (base.join("a"), base.join("b"));
     std::fs::create_dir_all(&a).unwrap();
@@ -603,14 +603,14 @@ fn a_filter_sees_only_the_paths_in_its_see_block() {
   mount "{a}" ro
   mount "{b}" rw
 }}
-filter wide {{
+tool wide {{
   program "sh"
   in script: string
   args ["-c", script]
   yields lines
   ok_codes [0, 1, 2]
 }}
-filter narrow {{
+tool narrow {{
   program "sh"
   in script: string
   args ["-c", script]
@@ -621,13 +621,13 @@ filter narrow {{
 }}
 main flow a {{
   out script_sees: list<string>
-  out filter_sees: list<string>
-  out filter_hidden: list<string>
-  out filter_write: list<string>
+  out tool_sees: list<string>
+  out tool_hidden: list<string>
+  out tool_write: list<string>
   set script_sees = wide(script: "cat {b}/two.txt")
-  set filter_sees = narrow(script: "cat {a}/one.txt")
-  set filter_hidden = narrow(script: "{{ cat {b}/two.txt; }} 2>&1")
-  set filter_write = narrow(script: "{{ echo x > {a}/new.txt; }} 2>&1")
+  set tool_sees = narrow(script: "cat {a}/one.txt")
+  set tool_hidden = narrow(script: "{{ cat {b}/two.txt; }} 2>&1")
+  set tool_write = narrow(script: "{{ echo x > {a}/new.txt; }} 2>&1")
 }}
 "#,
         a = a.display(),
@@ -642,9 +642,9 @@ main flow a {{
     assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
     // the script's other programs still see the second mount
     assert!(o.stdout.contains("\"script_sees\": [\n      \"narrowed away\""), "{}", o.stdout);
-    assert!(o.stdout.contains("\"filter_sees\": [\n      \"visible\""), "{}", o.stdout);
-    // the narrowed filter cannot see it, although the script mounted it
-    assert!(o.stdout.matches("narrowed away").count() == 1, "the narrowed filter read a path outside its `see`: {}", o.stdout);
+    assert!(o.stdout.contains("\"tool_sees\": [\n      \"visible\""), "{}", o.stdout);
+    // the narrowed tool cannot see it, although the script mounted it
+    assert!(o.stdout.matches("narrowed away").count() == 1, "the narrowed tool read a path outside its `see`: {}", o.stdout);
     assert!(o.stdout.contains("No such file"), "{}", o.stdout);
     // and a ro `see` stays read-only
     assert!(o.stdout.to_lowercase().contains("read-only"), "{}", o.stdout);
@@ -677,7 +677,7 @@ fn commands_example_runs_every_form_of_starting_a_program() {
 
 // ---- `within` blocks and `see` lines ----------------------------------------------
 
-const WITHIN_HEAD: &str = "sandbox {\n  mount system\n  mount \"/etc\" ro\n  mount \"/var/log\" ro\n}\nfilter cat_file {\n  program \"cat\"\n  in file: path\n  args [\"--\", file]\n  takes none\n  yields lines\n}\n";
+const WITHIN_HEAD: &str = "sandbox {\n  mount system\n  mount \"/etc\" ro\n  mount \"/var/log\" ro\n}\ntool cat_file {\n  program \"cat\"\n  in file: path\n  args [\"--\", file]\n  takes none\n  yields lines\n}\n";
 
 fn within_script(flow_body: &str) -> PathBuf {
     script(&format!("{WITHIN_HEAD}main flow a {{\n  out r: int\n{flow_body}\n}}\n"))
@@ -748,9 +748,9 @@ fn within_check_rules() {
 }
 
 #[test]
-fn a_filter_no_longer_takes_a_sandbox_block() {
-    let p = script("filter f {\n  program \"cat\"\n  sandbox {\n    see system\n  }\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
+fn a_tool_no_longer_takes_a_sandbox_block() {
+    let p = script("tool f {\n  program \"cat\"\n  sandbox {\n    see system\n  }\n}\nmain flow a {\n  print(text: \"x\")\n}\n");
     let o = weir_args(&["check", s(&p)]);
     assert_eq!(o.code, 3);
-    assert!(o.stderr.contains("E-FILTER-SANDBOX") && o.stderr.contains("`see` lines directly"), "{}", o.stderr);
+    assert!(o.stderr.contains("E-TOOL-SANDBOX") && o.stderr.contains("`see` lines directly"), "{}", o.stderr);
 }

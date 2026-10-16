@@ -102,7 +102,7 @@ pub enum ExprKind {
     Ident(String),
     List(Vec<Arg>),
     Record(Vec<(String, Expr)>),
-    /// `name(args)`: a flow, filter, fn or built-in.
+    /// `name(args)`: a flow, tool, fn or built-in.
     Call { name: String, args: Vec<Arg> },
     /// `recv.name(args)`: a pipeline stage, or a built-in applied to a value.
     Stage { recv: Box<Expr>, name: String, args: Vec<Arg> },
@@ -265,7 +265,7 @@ impl IoKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct Filter {
+pub struct Tool {
     pub name: String,
     pub program: String,
     pub program_span: Span,
@@ -302,7 +302,7 @@ pub enum FixtureItem {
 #[derive(Debug, Clone)]
 pub enum TestItem {
     Fixture { dir: String, items: Vec<FixtureItem>, span: Span },
-    Stub { filter: String, when: Vec<Arg>, yields: Option<Expr>, span: Span },
+    Stub { tool: String, when: Vec<Arg>, yields: Option<Expr>, span: Span },
     Stmt(Stmt),
 }
 
@@ -321,7 +321,7 @@ pub struct Use {
 #[derive(Debug, Clone)]
 pub enum Decl {
     Flow(Flow),
-    Filter(Filter),
+    Tool(Tool),
     Fn(FnDecl),
     Test(Test),
 }
@@ -338,8 +338,8 @@ impl File {
     pub fn flows(&self) -> impl Iterator<Item = &Flow> {
         self.decls.iter().filter_map(|d| if let Decl::Flow(f) = d { Some(f) } else { None })
     }
-    pub fn filters(&self) -> impl Iterator<Item = &Filter> {
-        self.decls.iter().filter_map(|d| if let Decl::Filter(f) = d { Some(f) } else { None })
+    pub fn tools(&self) -> impl Iterator<Item = &Tool> {
+        self.decls.iter().filter_map(|d| if let Decl::Tool(f) = d { Some(f) } else { None })
     }
     pub fn fns(&self) -> impl Iterator<Item = &FnDecl> {
         self.decls.iter().filter_map(|d| if let Decl::Fn(f) = d { Some(f) } else { None })

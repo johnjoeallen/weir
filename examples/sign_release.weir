@@ -5,7 +5,7 @@
 //   ./sign_release.weir --run --dist ./dist --file app-1.2.tar.gz --keys ~/release-keys
 //
 // The key folder is an `explicit` mount. It is declared in the sandbox block like any other mount,
-// but it is not part of the default view: the script's built-ins, the `run` call and every filter
+// but it is not part of the default view: the script's built-ins, the `run` call and every tool
 // that does not ask for it cannot reach it. Only `sign` asks, with its `see keys ro` line, so
 // `openssl` is the one program that can read the key. Anything else the script starts has no
 // such folder, and `exists` on a key path says false.
@@ -21,7 +21,7 @@ sandbox {
   mount keys at "/keys" ro explicit  // reached only by a `see` line or a `within` that names it
 }
 
-filter sign_sha256 {
+tool sign_sha256 {
   program "openssl"
   in key: path
   in file: path

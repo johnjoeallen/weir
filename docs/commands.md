@@ -6,15 +6,15 @@ written. Every snippet on this page comes from
 [`examples/commands.weir`](https://github.com/johnjoeallen/weir/blob/main/examples/commands.weir),
 which you can run with `weir run examples/commands.weir`.
 
-There are two ways to start a program: a declared **filter**, and the generic **`run`**.
+There are two ways to start a program: a declared **tool**, and the generic **`run`**.
 
-## A declared filter
+## A declared tool
 
-A filter wraps exactly one program. It names the program, its typed parameters, how the
+A tool wraps exactly one program. It names the program, its typed parameters, how the
 program reads input and what it produces, and the part of the disk it can see.
 
 ```weir
-filter cat_file {
+tool cat_file {
   program "cat"
   in file: path
   args ["--", file]          // a list; "--" stops a file named "-x" being read as an option
@@ -31,11 +31,11 @@ Call it like a function, with named arguments:
 let passwd = cat_file(file: path(text: "/etc/passwd"))
 ```
 
-`takes` and `yields` are each one of `none`, `lines`, `text` or `json`. A filter that
+`takes` and `yields` are each one of `none`, `lines`, `text` or `json`. A tool that
 `takes lines` reads the lines before it in a chain:
 
 ```weir
-filter grep_fixed {
+tool grep_fixed {
   program "grep"
   in pattern: string
   args ["-F", "-e", pattern]
@@ -111,7 +111,7 @@ try {
 
 ## Restricting several commands: `within`
 
-A filter's `see` lines narrow one program. To narrow a stretch of the script, put it in a `within`
+A tool's `see` lines narrow one program. To narrow a stretch of the script, put it in a `within`
 block, which can also return a value:
 
 ```weir
@@ -127,7 +127,7 @@ See [The sandbox](sandbox.md#narrowing-part-of-a-flow-within).
 
 ## Testing
 
-A test never starts a real program. It gives each filter the lines it would yield:
+A test never starts a real program. It gives each tool the lines it would yield:
 
 ```weir
 test "search finds the matching lines" {
@@ -139,7 +139,7 @@ test "search finds the matching lines" {
 ```
 
 A stub can name arguments, and then it answers only calls that pass those values.
-Several stubs for the same filter answer in turn: the first call gets the first
+Several stubs for the same tool answer in turn: the first call gets the first
 matching stub, the second call the second, and the last one answers every call after that.
 
 ```weir
@@ -152,11 +152,11 @@ test "the second look sees the new container" {
 ```
 
 A stub with no arguments matches every call, so it counts in the turns too. A call that
-no stub matches fails the test and shows the arguments it was made with. A filter that
+no stub matches fails the test and shows the arguments it was made with. A tool that
 yields `none` is stubbed with `yields none` and no value.
 
-A filter without a stub fails the test and tells you the line to add. The generic `run`
-has no stub, so put the calls you want to test in filters, and keep one-off `run` calls
+A tool without a stub fails the test and tells you the line to add. The generic `run`
+has no stub, so put the calls you want to test in tools, and keep one-off `run` calls
 in flows that the tests don't call.
 
 ## Programs that change things

@@ -14,11 +14,11 @@ sandbox {
 }
 ```
 
-A filter can restrict what its program sees by adding `see` lines to its declaration.
+A tool can restrict what its program sees by adding `see` lines to its declaration.
 This one runs `nginx -t`, which needs the config and its own error log:
 
 ```weir
-filter nginx_test {
+tool nginx_test {
   program "nginx"
   args ["-t"]
   see system
@@ -30,7 +30,7 @@ filter nginx_test {
 ```
 
 The program sees only the paths listed there, and only those that the script's own
-`sandbox` block mounted. A filter with no `see` lines sees everything the script mounted, except explicit mounts (below).
+`sandbox` block mounted. A tool with no `see` lines sees everything the script mounted, except explicit mounts (below).
 A `see` line can only narrow: `see "/etc/nginx" rw` would be an error here, because the
 script mounts it read-only. Only the script you run has a `sandbox` block. A script it
 imports with `use` can't mount anything, so imported code never sees more than the
@@ -45,7 +45,7 @@ sandbox input that resolves to `/`. There is no option to allow it.
 
 A script that really needs the whole machine runs without the sandbox, with
 `--sandbox off`. It can still narrow what each program sees: the `see` lines of a
-filter and the `within` blocks work there too. Each such program gets a view of its
+tool and the `within` blocks work there too. Each such program gets a view of its
 own, built in a user and mount namespace of its own. If the host forbids namespaces,
 `off` stops the program with the cause. `auto` skips the views as well and says so
 in its warning.
@@ -86,13 +86,13 @@ sandbox {
 ```
 
 An explicit mount is still declared in the `sandbox` block, but it isn't part of the
-default view. The script's built-ins, a generic `run`, and a filter with no `see` lines
+default view. The script's built-ins, a generic `run`, and a tool with no `see` lines
 can't reach it: for a program it is simply missing, for a built-in it is a
 `CapabilityError` that names the mount, and `exists` says `false`. A program sees it
-only if its filter says so, or it runs in a `within` block that does:
+only if its tool says so, or it runs in a `within` block that does:
 
 ```weir
-filter sign {
+tool sign {
   program "openssl"
   in file: path
   args ["dgst", "-sha256", "-sign", "/etc/ssl/private/release.key", file]
@@ -148,7 +148,7 @@ sandbox could not be built. `--no-sandbox` is the same as `--sandbox off`.
 
 ## A smaller view for one program
 
-A filter's `see` lines give its program a second, smaller root
+A tool's `see` lines give its program a second, smaller root
 inside the script's sandbox. Just before the program starts, Weir:
 
 1. gives the child process its own copy of the mount table (a nested mount namespace);
@@ -160,11 +160,11 @@ inside the script's sandbox. Just before the program starts, Weir:
 ```text
 host
  └─ the script's sandbox      user, mount and PID namespaces, pivot_root
-     └─ one filter's view     nested mount namespace, pivot_root, only the `see` paths
+     └─ one tool's view     nested mount namespace, pivot_root, only the `see` paths
 ```
 
-Paths the script mounted but the filter doesn't `see` aren't in that program's
-view at all. The script, and any other filter, still sees them. A `see` can only
+Paths the script mounted but the tool doesn't `see` aren't in that program's
+view at all. The script, and any other tool, still sees them. A `see` can only
 narrow: it can't name a path the script didn't mount (`E-SEE-UNMOUNTED`), and
 `see "/x" ro` makes a `rw` mount read-only for that program.
 
@@ -192,12 +192,12 @@ let info = within system, "/etc" ro {
 - **Only narrower:** a `within` can't widen what the script, or an enclosing `within`, allows. Naming a
   path the script never mounted is `E-SEE-UNMOUNTED`; naming one the enclosing block doesn't have
   fails when the block starts.
-- **Programs:** a path outside the view is missing, as it would be for a filter with `see` lines.
+- **Programs:** a path outside the view is missing, as it would be for a tool with `see` lines.
 - **Built-ins:** `read_text`, `write` and the others fail with an error naming the `within` block.
   `exists` returns `false`.
 - **Cost:** each program gets its own narrowed root, which adds about 0.6 ms.
 
-The word `sandbox` is used only for the block at the top of the script. A filter uses `see` lines,
+The word `sandbox` is used only for the block at the top of the script. A tool uses `see` lines,
 and a flow uses `within`.
 
 ## Limits

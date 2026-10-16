@@ -55,7 +55,7 @@ script's help and exits with return code 2. Nothing runs by accident. See
 ## Small example
 
 The script as a whole can see `/etc` and `/var/log`, both read-only. Each of its two
-filters gets a smaller view: `cat_hosts` sees `/etc` but not `/var/log`, and
+tools gets a smaller view: `cat_hosts` sees `/etc` but not `/var/log`, and
 `count_lines` sees `/var/log` but not `/etc`. The test stubs both programs, so it
 runs nothing.
 
@@ -69,8 +69,8 @@ sandbox {
   mount "/var/log" ro
 }
 
-// This filter can see /etc but not /var/log.
-filter cat_hosts {
+// This tool can see /etc but not /var/log.
+tool cat_hosts {
   program "cat"
   in file: path
   args ["--", file]
@@ -80,8 +80,8 @@ filter cat_hosts {
   yields lines
 }
 
-// This filter can see /var/log but not /etc.
-filter count_lines {
+// This tool can see /var/log but not /etc.
+tool count_lines {
   program "wc"
   in file: path
   args ["-l", file]
@@ -120,7 +120,7 @@ weir test  hosts.weir     # run the test block with the programs stubbed
 ./hosts.weir              # run it (the shebang line supplies --run)
 ```
 
-To see the restriction work, point the first filter at a file it can't see:
+To see the restriction work, point the first tool at a file it can't see:
 
 ```bash
 ./hosts.weir --file /var/log/dpkg.log
