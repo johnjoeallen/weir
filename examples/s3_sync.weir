@@ -10,9 +10,12 @@
 //   - the keys reach `aws` only through its environment, so the script no longer writes them
 //     to ~/.aws and overwrites them afterwards;
 //   - `aws` sees the source folder read-only and nothing else of the host's disk.
+//
+// `source` is declared twice on purpose: in the sandbox block it is the host folder (one option,
+// --source); in the flow it is the same folder as it appears inside the sandbox, /source.
 
 sandbox {
-  in source: path = "/tmp"           // host folder to upload, --source
+  in source: path = "."              // host folder to upload, --source (the current folder by default)
   mount system
   mount source at "/source" ro
 }
@@ -25,14 +28,15 @@ filter aws_sync {
   in extra: list<string>
   in access_key_id: secret
   in secret_access_key: secret
+  in source: path
   env {
     AWS_ACCESS_KEY_ID = access_key_id
     AWS_SECRET_ACCESS_KEY = secret_access_key
     AWS_DEFAULT_REGION = region
   }
-  args ["s3", "sync", "/source", "s3://${bucket}/${dest}", "--no-progress", ...$extra]
+  args ["s3", "sync", source, "s3://${bucket}/${dest}", "--no-progress", ...$extra]
   see system
-  see "/source" ro
+  see source ro
   takes none
   yields lines
 }
@@ -50,6 +54,7 @@ fn extra_args(endpoint: string?, delete: bool) -> list<string> {
 }
 
 main flow sync {
+  in source: path                    // the sandbox's `source`, as it appears inside: /source
   in bucket: string
   in dest: string = ""
   in region: string = "us-east-1"
@@ -60,6 +65,7 @@ main flow sync {
   out transferred: int
 
   let report = aws_sync(
+    source: source,
     bucket: bucket,
     dest: dest,
     region: region,

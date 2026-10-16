@@ -125,7 +125,7 @@ impl View {
     }
 
     /// What a program started inside this view sees: this view, cut down to a filter's own `see` lines.
-    /// A explicit mount is in the result only if both the view and the filter name it.
+    /// An explicit mount is in the result only if both the view and the filter name it.
     fn narrow_to(&self, filter: Option<(Vec<(String, Mode)>, bool)>, explicit: &[String]) -> (Vec<(String, Mode)>, bool) {
         let Some((fpaths, fsystem)) = filter else {
             return (self.paths.clone(), self.system);
@@ -161,6 +161,8 @@ pub struct Interp {
     views: Vec<View>,
     /// Running inside the real sandbox, so `see` clauses can be enforced per program.
     pub sandboxed: bool,
+    /// Per-program views (`see`, `within`) can be built even without the script's sandbox. False after an `auto` fallback.
+    pub views_ok: bool,
     depth: usize,
     /// Text `print` wrote while in test mode.
     pub captured: Vec<String>,
@@ -233,6 +235,7 @@ impl Interp {
             test_mode: false,
             views: vec![],
             sandboxed: false,
+            views_ok: true,
             depth: 0,
             captured: vec![],
         }
@@ -788,7 +791,7 @@ impl Interp {
                 See::Path { path, mode } => {
                     let p = normalize(&self.eval(path, frame)?.display());
                     let write = *mode == Mode::Rw;
-                    // A explicit mount can be requested from the script's top level, or from a view that already requested it.
+                    // An explicit mount can be requested from the script's top level, or from a view that already requested it.
                     if let Some((m, _)) = self.mounts.find(&p) {
                         if m.explicit && self.views.last().is_some_and(|v| !v.requests(&m.inside)) {
                             return Err(throw(
@@ -1349,13 +1352,15 @@ impl Interp {
             Some(v) => Some(v.narrow_to(narrow, &self.explicit_insides())),
             None => narrow,
         };
-        // With a explicit mount in the sandbox, every program is cut down to the default view, which leaves it out.
+        // With an explicit mount in the sandbox, every program is cut down to the default view, which leaves it out.
         let narrow = match narrow {
-            None if self.mounts.has_explicit() => Some(self.default_view()),
+            None if self.sandboxed && self.mounts.has_explicit() => Some(self.default_view()),
             n => n,
         };
-        if let (true, Some((sees, system))) = (self.sandboxed, narrow) {
-            crate::sandbox::narrow(&mut cmd, sees, system, self.explicit_pairs());
+        let mut view_dir = None;
+        if let (true, Some((sees, system))) = (self.sandboxed || self.views_ok, narrow) {
+            crate::sandbox::narrow(&mut cmd, sees, system, self.explicit_pairs(), !self.sandboxed);
+            view_dir = Some(!self.sandboxed);
         }
         let mut child = cmd.spawn().map_err(|e| {
             let why = match e.kind() {
@@ -1371,7 +1376,12 @@ impl Interp {
                 })
             })
         });
+        let child_pid = child.id();
         let out = child.wait_with_output().map_err(|e| throw("ExecError", format!("waiting for `{program}` failed: {e}")))?;
+        if view_dir == Some(true) {
+            // Without the script's sandbox the program's view was built under the host's /tmp; the folder stays behind.
+            let _ = std::fs::remove_dir(format!("/tmp/.weir-see-{child_pid}"));
+        }
         if let Some(w) = writer {
             let _ = w.join();
         }

@@ -343,6 +343,7 @@ impl<'a> Cx<'a> {
                 );
             } else {
                 self.sandbox_block(sb);
+                self.sandbox_ins_in_flows(sb, f);
             }
         }
 
@@ -396,6 +397,40 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Every sandbox `in` is also an `in` of each flow that can be run, so the flow's interface shows it.
+    /// The flow receives the path as it appears inside the sandbox; the host path stays in the sandbox block.
+    fn sandbox_ins_in_flows(&mut self, sb: &SandboxBlock, f: &File) {
+        for d in &f.decls {
+            let Decl::Flow(flow) = d else { continue };
+            if flow.vis == Vis::Private {
+                continue;
+            }
+            for si in &sb.ins {
+                match flow.ins.iter().find(|i| i.name == si.name) {
+                    None => self.err(
+                        flow.span,
+                        "E-SANDBOX-IN-NOT-IN-FLOW",
+                        format!("the sandbox input `{}` is not declared in flow `{}`", si.name, flow.name),
+                        Some(format!("add `in {}: {}` to the flow; it receives the path as it appears inside the sandbox", si.name, si.ty.show())),
+                    ),
+                    Some(fi) if fi.ty != si.ty => self.err(
+                        fi.span,
+                        "E-SANDBOX-IN-TYPE-MISMATCH",
+                        format!("`{}` is `{}` in the sandbox block but `{}` in flow `{}`", si.name, si.ty.show(), fi.ty.show(), flow.name),
+                        Some(format!("write `in {}: {}`", si.name, si.ty.show())),
+                    ),
+                    Some(fi) if fi.default.is_some() => self.err(
+                        fi.span,
+                        "E-SANDBOX-IN-DEFAULT",
+                        format!("`{}` has its default in the sandbox block, not in flow `{}`", si.name, flow.name),
+                        Some("remove the default here".into()),
+                    ),
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+
     fn sandbox_block(&mut self, sb: &SandboxBlock) {
         self.push();
         for i in &sb.ins {
@@ -408,6 +443,14 @@ impl<'a> Cx<'a> {
         for m in &sb.mounts {
             if let MountSpec::Path { host, at, .. } = &m.spec {
                 self.expr(host, Want::default());
+                if literal_str(host).is_some_and(|h| normalize(&h) == "/") {
+                    self.err(
+                        host.span,
+                        "E-MOUNT-ROOT",
+                        "a mount of the host's root folder would be the whole machine, and a sandbox that holds everything is no sandbox".into(),
+                        Some("mount only the folders the script needs; a script that needs the whole machine runs with --sandbox off".into()),
+                    );
+                }
                 if let Some(a) = at {
                     self.expr(a, Want::default());
                     if let Some(s) = literal_str(a) {

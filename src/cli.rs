@@ -248,10 +248,15 @@ fn cmd_sandbox_suggest(_args: &[String]) -> i32 {
 
 /// Evaluate the sandbox block's mounts. `lenient` skips host-path existence concerns (for `list`).
 pub fn build_mounts(f: &File, sandbox_ins: &HashMap<String, Value>, lenient: bool) -> Result<Mounts, String> {
+    build_mounts_with(f, sandbox_ins, lenient).map(|(m, _)| m)
+}
+
+/// The mount table, and the host value of every sandbox `in` (given or defaulted).
+pub fn build_mounts_with(f: &File, sandbox_ins: &HashMap<String, Value>, lenient: bool) -> Result<(Mounts, HashMap<String, Value>), String> {
     let mut m = Mounts::default();
     let Some(sb) = &f.sandbox else {
         m.add("/", "/", Mode::Rw, "unconfined");
-        return Ok(m);
+        return Ok((m, HashMap::new()));
     };
     let mut it = Interp::new(Options::default(), Mounts::default(), vec![]);
     let binds: Vec<(String, Value)> = sandbox_ins.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -298,7 +303,7 @@ pub fn build_mounts(f: &File, sandbox_ins: &HashMap<String, Value>, lenient: boo
         }
     }
     m.add_fixed();
-    Ok(m)
+    Ok((m, all.into_iter().collect()))
 }
 
 fn absolutize(p: &str) -> String {
@@ -540,10 +545,11 @@ fn cmd_run(args: &[String]) -> i32 {
                     Some(b) if specs.iter().chain(sandbox_specs.iter()).any(|s| norm_flag(&s.name) == b && s.kind == Kind::Bool) => (true, b.to_string()),
                     _ => (false, name_n.clone()),
                 };
-                let (spec, table) = if let Some(s) = specs.iter().find(|s| norm_flag(&s.name) == base) {
-                    (s, &mut given)
-                } else if let Some(s) = sandbox_specs.iter().find(|s| norm_flag(&s.name) == base) {
+                // A sandbox input is also declared by the flow; the sandbox holds the host value.
+                let (spec, table) = if let Some(s) = sandbox_specs.iter().find(|s| norm_flag(&s.name) == base) {
                     (s, &mut given_sandbox)
+                } else if let Some(s) = specs.iter().find(|s| norm_flag(&s.name) == base) {
+                    (s, &mut given)
                 } else {
                     let mut valid: Vec<String> = ["--confirm", "--plan", "--json", "--out", "--ro", "--deny-exec", "--secret-file", "--secret-stdin", "--sandbox", "--no-sandbox", "--help"]
                         .iter()
@@ -595,13 +601,21 @@ fn cmd_run(args: &[String]) -> i32 {
             }
         }
     }
-    let mut mounts = match build_mounts(entry, &sandbox_vals, false) {
+    let (mut mounts, host_vals) = match build_mounts_with(entry, &sandbox_vals, false) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("weir: {file}: sandbox: {e}");
             return EXIT_USAGE;
         }
     };
+    if let Some(e) = mounts.entries.iter().find(|e| e.origin == "declared" && e.host == "/") {
+        eprintln!(
+            "weir: the sandbox mounts the host's root folder (/) at {}, which would be the whole machine and defeats the sandbox.\n\
+             Mount only the folders the script needs. A script that needs the whole machine runs with --sandbox off.",
+            e.inside
+        );
+        return EXIT_USAGE;
+    }
     for r in &flags.ro {
         if !mounts.make_ro(r) {
             eprintln!("weir: --ro {r}: no mount has that inside path; mounts:\n{}", mounts.describe());
@@ -637,7 +651,7 @@ fn cmd_run(args: &[String]) -> i32 {
             return if why_unconfined.is_some() { EXIT_CAPABILITY } else { EXIT_USAGE };
         }
         match &why_unconfined {
-            Some(_) => eprintln!("weir: warning: running without the filesystem sandbox: {how}"),
+            Some(_) => eprintln!("weir: warning: running without the filesystem sandbox: {how}\n(the per-program views from `see` lines and `within` blocks are skipped too)"),
             None => eprintln!("weir: warning: running without the filesystem sandbox (--sandbox off)"),
         }
     }
@@ -661,6 +675,14 @@ fn cmd_run(args: &[String]) -> i32 {
                     }
                 }
                 Err(e) => return usage_err(e),
+            }
+            continue;
+        }
+        // A sandbox input the flow declares again: the flow gets the host path as it appears inside.
+        if let Some(host) = host_vals.get(&s.name).filter(|_| sandbox_specs.iter().any(|b| b.name == s.name)) {
+            match to_value(&s.ty, &[host.display()], Some(&mounts)) {
+                Ok(v) => inputs.push((s.name.clone(), v)),
+                Err(e) => return usage_err(format!("`{}`: {e}", flag_name(&s.name))),
             }
             continue;
         }
@@ -709,6 +731,7 @@ fn cmd_run(args: &[String]) -> i32 {
     }
     let mut interp = Interp::new(opts, mounts, units_of(&prog));
     interp.sandboxed = sandboxed;
+    interp.views_ok = why_unconfined.is_none();
     let flow_rc = Rc::new(flow.clone());
     let (outs, result) = interp.run_entry(0, &flow_rc, inputs);
 
@@ -816,12 +839,16 @@ fn print_flow_help(file: &str, flow: &Flow, entry: &File) {
         println!("  {n}{ty}{extra}{}", if host { "  (host path, sandbox)" } else { "" });
     };
     if let Some(sb) = &entry.sandbox {
-        for i in &sb.ins {
+        // an input the flow declares again is listed once, below
+        for i in sb.ins.iter().filter(|i| !flow.ins.iter().any(|f| f.name == i.name)) {
             show(i, true);
         }
     }
     for i in &flow.ins {
-        show(i, false);
+        match entry.sandbox.as_ref().and_then(|sb| sb.ins.iter().find(|s| s.name == i.name)) {
+            Some(sandbox_in) => show(sandbox_in, true),
+            None => show(i, false),
+        }
     }
     if !any {
         println!("  (none)");

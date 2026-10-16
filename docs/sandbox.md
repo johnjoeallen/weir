@@ -36,6 +36,43 @@ script mounts it read-only. Only the script you run has a `sandbox` block. A scr
 imports with `use` can't mount anything, so imported code never sees more than the
 script you run allows.
 
+## The host's root can't be mounted
+
+A mount of `/` would put the whole machine inside the sandbox. It would also contain
+itself: `mount "/" at "/host"` would show the host inside `/host`, inside `/host/host`,
+and so on. `weir check` reports it as `E-MOUNT-ROOT`, and `weir run` refuses a
+sandbox input that resolves to `/`. There is no option to allow it.
+
+A script that really needs the whole machine runs without the sandbox, with
+`--sandbox off`. It can still narrow what each program sees: the `see` lines of a
+filter and the `within` blocks work there too. Each such program gets a view of its
+own, built in a user and mount namespace of its own. If the host forbids namespaces,
+`off` stops the program with the cause. `auto` skips the views as well and says so
+in its warning.
+
+## A host folder chosen at run time
+
+A sandbox block can take a host folder from the command line. Declare it in the
+block, and again in the flow:
+
+```weir
+sandbox {
+  in source: path = "."              // the host folder; --source changes it
+  mount system
+  mount source at "/source" ro
+}
+
+main flow sync {
+  in source: path                    // the same input, as the flow sees it: /source
+  ...
+}
+```
+
+It is one option, `--source`, and `--help` lists it once. The sandbox block keeps the
+host path and the default. The flow gets the path as it appears inside the sandbox, so
+it can hand `/source` to a program without writing it out. A sandbox input that a
+runnable flow doesn't declare, or declares with another type or a default, is a check error.
+
 ## Mounts only a request can reach
 
 Some mounts are too powerful to give every program in the script, such as the Docker
@@ -48,7 +85,7 @@ sandbox {
 }
 ```
 
-A explicit mount is still declared in the `sandbox` block, but it isn't part of the
+An explicit mount is still declared in the `sandbox` block, but it isn't part of the
 default view. The script's built-ins, a generic `run`, and a filter with no `see` lines
 can't reach it: for a program it is simply missing, for a built-in it is a
 `CapabilityError` that names the mount, and `exists` says `false`. A program sees it
@@ -70,7 +107,7 @@ The request has to name the mount or a path inside it. `see "/etc/ssl" ro` or a
 `within` for the parent folder doesn't include it. A request can't widen the mode, so
 a `ro` mount stays `ro`.
 
-Once a script has a explicit mount, every program it starts gets its own narrowed
+Once a script has an explicit mount, every program it starts gets its own narrowed
 view, which costs about 0.6 ms per program. One caveat: restriction applies to the
 mount path. If another mount exposes the same host folder, the folder is visible
 there. Without a sandbox (`--sandbox off`) programs aren't confined at all, so only

@@ -29,7 +29,7 @@ mod other {
         Err("the filesystem sandbox needs Linux namespaces and is not available on this platform".into())
     }
 
-    pub fn narrow(_cmd: &mut Command, _sees: Vec<(String, Mode)>, _system: bool, _explicit: Vec<(String, String)>) {}
+    pub fn narrow(_cmd: &mut Command, _sees: Vec<(String, Mode)>, _system: bool, _explicit: Vec<(String, String)>, _standalone: bool) {}
 
     pub fn probe() -> Result<(), String> {
         Err("the filesystem sandbox needs Linux namespaces and is not available on this platform".into())
@@ -125,6 +125,12 @@ mod linux {
         optional: bool,
     }
 
+    /// Kernel filesystems that expose state and not files.
+    const PSEUDO_FS: &[&str] = &[
+        "proc", "sysfs", "cgroup", "cgroup2", "devpts", "mqueue", "binfmt_misc", "securityfs", "debugfs", "tracefs", "fusectl",
+        "configfs", "pstore", "bpf", "autofs", "hugetlbfs", "efivarfs", "selinuxfs",
+    ];
+
     fn parse_mountinfo_flags(opts: &str) -> c_ulong {
         let mut f = 0;
         for o in opts.split(',') {
@@ -159,22 +165,46 @@ mod linux {
     }
 
     /// Make `target` and every mount below it read-only. A recursive bind keeps submounts of the
-    /// source writable, which would break a `ro` declaration.
+    /// source writable, which would break a `ro` declaration. A submount that cannot be remounted is covered
+    /// with an empty read-only tmpfs (or left alone if it is a kernel pseudo-filesystem).
     fn make_tree_readonly(target: &str) -> Result<(), String> {
         let info = std::fs::read_to_string("/proc/self/mountinfo").map_err(|e| format!("cannot read /proc/self/mountinfo: {e}"))?;
-        let mut points: Vec<(String, c_ulong)> = Vec::new();
+        let mut points: Vec<(String, c_ulong, String)> = Vec::new();
         for line in info.lines() {
             let f: Vec<&str> = line.split(' ').collect();
             if f.len() < 6 {
                 continue;
             }
             let mp = unescape_mountinfo(f[4]);
+            let fstype = line.split_once(" - ").and_then(|(_, r)| r.split(' ').next()).unwrap_or("").to_string();
+            // A namespace file bound somewhere (Docker keeps them under /run) cannot be remounted and holds no data.
+            if fstype == "nsfs" {
+                continue;
+            }
             if mp == target || mp.starts_with(&format!("{target}/")) {
-                points.push((mp, parse_mountinfo_flags(f[5])));
+                points.push((mp, parse_mountinfo_flags(f[5]), fstype));
             }
         }
-        for (mp, flags) in points {
-            do_mount(None, &mp, None, MS_BIND | MS_REMOUNT | MS_RDONLY | flags | MS_NOSUID | MS_NODEV, None)?;
+        for (mp, flags, fstype) in points {
+            let r = do_mount(None, &mp, None, MS_BIND | MS_REMOUNT | MS_RDONLY | flags | MS_NOSUID | MS_NODEV, None);
+            // Kernel pseudo-filesystems below a mounted tree (binfmt_misc, cgroups, ...) can be locked against a
+            // remount from a user namespace. They hold no files, and writing to them needs real root, which the
+            // sandbox never has, so they are left as they are. A submount that holds data must still succeed.
+            match r {
+                Err(_) if mp != target && PSEUDO_FS.contains(&fstype.as_str()) => {}
+                // A submount that holds data and is locked (a container runtime's overlay, say) can be neither made
+                // read-only nor unmounted from here. It is covered with an empty read-only tmpfs, so it shows as empty
+                // and is never left writable.
+                // If even that is refused with "permission denied", the path cannot be walked by this user, so the
+                // submount is out of reach anyway and is left as it is.
+                Err(_) if mp != target => {
+                    match do_mount(Some("tmpfs"), &mp, Some("tmpfs"), MS_RDONLY | MS_NOSUID | MS_NODEV, Some("mode=755")) {
+                        Err(e) if e.contains("(os error 13)") => {}
+                        other => other?,
+                    }
+                }
+                other => other?,
+            }
         }
         Ok(())
     }
@@ -202,12 +232,34 @@ mod linux {
         }
     }
 
+    /// Bind one declared mount into the new root, read-only or read-write as declared.
+    fn bind_one(root: &str, b: &Bind) -> Result<(), String> {
+        if !std::path::Path::new(&b.src).exists() {
+            if b.optional {
+                return Ok(());
+            }
+            return Err(format!("the host path {} does not exist, so it cannot be mounted at {}", b.src, b.inside));
+        }
+        // A mount at "/" is the root itself: "{root}/" would never match its mountinfo entry, and the
+        // read-only remount would silently do nothing.
+        let dst = if b.inside == "/" { root.to_string() } else { format!("{root}{}", b.inside) };
+        make_dir_or_file_target(&b.src, &dst)?;
+        do_mount(Some(&b.src), &dst, None, MS_BIND | MS_REC, None)?;
+        if b.mode == Mode::Ro {
+            make_tree_readonly(&dst)?;
+        } else {
+            // keep nosuid/nodev; preserve the source's locked flags
+            let flags = mount_flags_of(&dst);
+            do_mount(None, &dst, None, MS_BIND | MS_REMOUNT | flags | MS_NOSUID | MS_NODEV, None)?;
+        }
+        Ok(())
+    }
+
     /// Build a new root at `root` (an existing empty directory) and pivot into it.
     /// `dev_proc_from` is where `/dev` nodes and `/proc` come from in the current namespace.
     fn build_and_enter(root: &str, binds: &[Bind], fresh_proc: bool) -> Result<(), String> {
         do_mount(None, "/", None, MS_REC | MS_PRIVATE, None)?;
         do_mount(Some("tmpfs"), root, Some("tmpfs"), MS_NOSUID | MS_NODEV, Some("mode=755"))?;
-
         // Fixed entries come first so that a declared mount under /tmp lands on top of them:
         // a private writable /tmp, a minimal /dev and /proc.
         let tmp = format!("{root}/tmp");
@@ -248,22 +300,7 @@ mod linux {
         let mut sorted: Vec<&Bind> = binds.iter().collect();
         sorted.sort_by_key(|b| depth(&b.inside));
         for b in sorted {
-            if !std::path::Path::new(&b.src).exists() {
-                if b.optional {
-                    continue;
-                }
-                return Err(format!("the host path {} does not exist, so it cannot be mounted at {}", b.src, b.inside));
-            }
-            let dst = format!("{root}{}", b.inside);
-            make_dir_or_file_target(&b.src, &dst)?;
-            do_mount(Some(&b.src), &dst, None, MS_BIND | MS_REC, None)?;
-            if b.mode == Mode::Ro {
-                make_tree_readonly(&dst)?;
-            } else {
-                // keep nosuid/nodev; preserve the source's locked flags
-                let flags = mount_flags_of(&dst);
-                do_mount(None, &dst, None, MS_BIND | MS_REMOUNT | flags | MS_NOSUID | MS_NODEV, None)?;
-            }
+            bind_one(root, b)?;
         }
 
         // pivot_root(".", ".oldroot"), then drop the old root.
@@ -533,7 +570,7 @@ mod linux {
 
     /// Narrow what one program sees (a filter's `see` lines, or the view of a `within` block): the program starts in
     /// a nested mount namespace holding only the listed inside paths. Call only inside the sandbox.
-    pub fn narrow(cmd: &mut Command, sees: Vec<(String, Mode)>, system: bool, explicit: Vec<(String, String)>) {
+    pub fn narrow(cmd: &mut Command, sees: Vec<(String, Mode)>, system: bool, explicit: Vec<(String, String)>, standalone: bool) {
         let mut binds: Vec<Bind> = Vec::new();
         if system {
             for p in SYSTEM_SET {
@@ -541,7 +578,7 @@ mod linux {
             }
         }
         for (p, m) in sees {
-            // A explicit mount is held out of the root's view, so its source is the holding path.
+            // An explicit mount is held out of the root's view, so its source is the holding path.
             let src = explicit
                 .iter()
                 .find(|(inside, _)| p == *inside || p.strip_prefix(inside.as_str()).is_some_and(|r| r.starts_with('/')))
@@ -551,6 +588,9 @@ mod linux {
         // `pre_exec` can only carry an errno back to the parent, so the reason is written to a
         // copy of the original stderr (close-on-exec) taken before the command redirects its own.
         let report = std::io::stderr().as_fd().try_clone_to_owned().ok().map(std::fs::File::from);
+        // Outside the script's own sandbox (`--sandbox off`) there is no user namespace to build the view in yet,
+        // so the program takes one of its own, mapping the current user to itself.
+        let ids = standalone.then(|| unsafe { (getuid(), getgid()) });
         unsafe {
             cmd.pre_exec(move || {
                 let fail = |msg: String, errno: Option<i32>| -> io::Error {
@@ -564,9 +604,16 @@ mod linux {
                     }
                 };
                 let pid = getpid();
-                if unshare(CLONE_NEWNS) != 0 {
+                if unshare(if ids.is_some() { CLONE_NEWUSER | CLONE_NEWNS } else { CLONE_NEWNS }) != 0 {
                     let e = io::Error::last_os_error();
-                    return Err(fail(format!("unshare: {e}"), e.raw_os_error()));
+                    return Err(fail(format!("unshare: {}", why_unshare_failed(&e)), e.raw_os_error()));
+                }
+                if let Some((uid, gid)) = ids {
+                    for (file, text) in [("/proc/self/setgroups", "deny".to_string()), ("/proc/self/uid_map", format!("{uid} {uid} 1")), ("/proc/self/gid_map", format!("{gid} {gid} 1"))] {
+                        if let Err(e) = std::fs::write(file, text) {
+                            return Err(fail(format!("{file}: {e}"), e.raw_os_error()));
+                        }
+                    }
                 }
                 let root = format!("/tmp/.weir-see-{pid}");
                 if let Err(e) = std::fs::create_dir_all(&root) {

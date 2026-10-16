@@ -11,11 +11,11 @@ pub struct MountEntry {
     pub origin: &'static str,
     /// Not part of the default view: only a `see` line or a `within` header that names it reaches it.
     pub explicit: bool,
-    /// Where a explicit mount is held inside the sandbox, out of every program's default view.
+    /// Where an explicit mount is held inside the sandbox, out of every program's default view.
     pub hidden: Option<String>,
 }
 
-/// A explicit mount is bound under this folder in the sandbox root, which no program's view includes.
+/// An explicit mount is bound under this folder in the sandbox root, which no program's view includes.
 pub const EXPLICIT_DIR: &str = "/.weir-explicit";
 
 #[derive(Debug, Clone, Default)]
@@ -83,7 +83,8 @@ impl Mounts {
     }
 
     pub fn is_system_mounted(&self) -> bool {
-        SYSTEM_SET.iter().all(|p| self.entries.iter().any(|e| e.origin == "system" && e.inside == *p))
+        // A script with no `sandbox` block is unconfined: its root mount holds the system set already.
+        self.entries.iter().any(|e| e.origin == "unconfined") || SYSTEM_SET.iter().all(|p| self.entries.iter().any(|e| e.origin == "system" && e.inside == *p))
     }
 
     /// The most specific mount covering an inside path, with the host path it maps to.

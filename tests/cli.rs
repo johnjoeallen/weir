@@ -363,6 +363,111 @@ main flow a {{
 }
 
 #[test]
+fn a_sandbox_input_must_be_declared_by_the_flow() {
+    let base = "sandbox {\n  in src: path = \"/var\"\n  mount system\n  mount src at \"/data\" ro\n}\n";
+    let p = script(&format!("{base}main flow a {{\n  print(text: \"x\")\n}}\n"));
+    let o = weir_args(&["check", s(&p)]);
+    assert_eq!(o.code, 3, "{}", o.stderr);
+    assert!(o.stderr.contains("E-SANDBOX-IN-NOT-IN-FLOW"), "{}", o.stderr);
+    let p = script(&format!("{base}main flow a {{\n  in src: string\n  print(text: src)\n}}\n"));
+    let o = weir_args(&["check", s(&p)]);
+    assert!(o.stderr.contains("E-SANDBOX-IN-TYPE-MISMATCH"), "{}", o.stderr);
+    let p = script(&format!("{base}main flow a {{\n  in src: path = path(text: \"/x\")\n  print(text: \"x\")\n}}\n"));
+    let o = weir_args(&["check", s(&p)]);
+    assert!(o.stderr.contains("E-SANDBOX-IN-DEFAULT"), "{}", o.stderr);
+}
+
+#[test]
+fn a_flow_receives_its_sandbox_input_as_the_inside_path() {
+    let dir = scratch().join(format!("weir-sbin-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = "sandbox {\n  in src: path = \"/var\"\n  mount system\n  mount src at \"/data\" ro\n}\nmain flow a {\n  in src: path\n  out where: string\n  set where = string(value: src)\n}\n";
+    let p = script(src);
+    let o = weir_args(&["run", s(&p), "--src", dir.to_str().unwrap(), "--out", "where"]);
+    if o.code == 4 {
+        eprintln!("skipped: this host cannot create the sandbox: {}", o.stderr.trim());
+        return;
+    }
+    assert_eq!((o.code, o.stdout.trim()), (0, "/data"), "{}", o.stderr);
+    // listed once in --help, as a host path
+    let o = weir_args(&["run", s(&p), "--help"]);
+    assert_eq!(o.stdout.matches("--src").count(), 1, "{}", o.stdout);
+    assert!(o.stdout.contains("host path, sandbox"), "{}", o.stdout);
+}
+
+#[test]
+fn mounting_the_host_root_is_an_error() {
+    for mount in ["mount \"/\" ro", "mount \"/\" at \"/host\" ro", "mount \"/var/..\" rw"] {
+        let p = script(&format!("sandbox {{\n  mount system\n  {mount}\n}}\nmain flow a {{\n  print(text: \"x\")\n}}\n"));
+        let o = weir_args(&["check", s(&p)]);
+        assert_eq!(o.code, 3, "{mount}: {}", o.stderr);
+        assert!(o.stderr.contains("E-MOUNT-ROOT"), "{mount}: {}", o.stderr);
+        let o = weir_args(&["run", s(&p)]);
+        assert_eq!(o.code, 3, "{mount}: run checks first: {}", o.stderr);
+        assert!(!o.stdout.contains('x'), "nothing may run: {}", o.stdout);
+    }
+    // a root chosen at run time through a sandbox input is refused as well
+    let p = script("sandbox {\n  in dir: path = \"/var\"\n  mount system\n  mount dir ro\n}\nmain flow a {\n  in dir: path\n  print(text: \"x\")\n}\n");
+    let o = weir_args(&["run", s(&p), "--dir", "/"]);
+    assert_eq!(o.code, 2, "{}", o.stderr);
+    assert!(o.stderr.contains("--sandbox off"), "{}", o.stderr);
+}
+
+#[test]
+fn see_lines_and_within_blocks_work_without_the_sandbox() {
+    let base = scratch().join(format!("weir-views-{}", std::process::id()));
+    let shown = base.join("shown");
+    let hidden = base.join("hidden");
+    std::fs::create_dir_all(&shown).unwrap();
+    std::fs::create_dir_all(&hidden).unwrap();
+    std::fs::write(shown.join("a.txt"), "in-view\n").unwrap();
+    std::fs::write(hidden.join("b.txt"), "out-of-view\n").unwrap();
+    let src = format!(
+        r#"filter sh_view {{
+  program "sh"
+  in script: string
+  args ["-c", script]
+  see system
+  see "{s}" ro
+  yields lines
+  ok_codes [0, 1, 2]
+}}
+filter sh_all {{
+  program "sh"
+  in script: string
+  args ["-c", script]
+  yields lines
+  ok_codes [0, 1, 2]
+}}
+main flow a {{
+  out narrowed: list<string>
+  out everything: list<string>
+  out inside_within: list<string>
+  set narrowed = sh_view(script: "cat {s}/a.txt 2>&1; cat {h}/b.txt 2>&1")
+  set everything = sh_all(script: "cat {s}/a.txt 2>&1; cat {h}/b.txt 2>&1")
+  set inside_within = within system, "{s}" ro {{
+    return sh_all(script: "cat {s}/a.txt 2>&1; cat {h}/b.txt 2>&1")
+  }}
+}}
+"#,
+        s = shown.display(),
+        h = hidden.display()
+    );
+    let p = script(&src);
+    let o = weir_args(&["run", s(&p), "--json"]);
+    if o.stderr.contains("could not narrow") {
+        eprintln!("skipped: this host cannot create the per-program view: {}", o.stderr.trim());
+        return;
+    }
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    // three runs read the shown file; only the unnarrowed one reads the other folder
+    assert_eq!(o.stdout.matches("in-view").count(), 3, "{}", o.stdout);
+    assert_eq!(o.stdout.matches("out-of-view").count(), 1, "only the program with no view may read it: {}", o.stdout);
+    let left: Vec<_> = std::fs::read_dir("/tmp").unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(".weir-see-")).collect();
+    assert!(left.is_empty(), "view folders left behind in /tmp: {left:?}");
+}
+
+#[test]
 fn sandbox_exit_code_and_cleanup() {
     let p = script("sandbox {\n  mount system\n}\nmain flow a {\n  fail message: \"inside\"\n}\n");
     let o = weir_args(&["run", s(&p)]);
