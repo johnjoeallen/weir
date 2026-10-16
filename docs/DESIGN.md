@@ -349,7 +349,7 @@ tool docker {
 
 **Paths from the command line are host paths.** An operator thinks in host paths, so a `path` input given as `--log /var/log/nginx/access.log` is a host path that Weir translates through the mount table to the inside path. A relative path is resolved against the host working directory first. If the path does not fall under any mount, the run fails with exit 2 and a message that lists the mounts. Defaults written in the script are inside paths. If two mounts expose the same host path, translation is ambiguous and `weir check` reports an error for the mounts it can compare statically; at run time the more specific inside path is used.
 
-**Entering the sandbox.** `weir run` does its work in this order: parse and check the entry file, fetch and verify imported components against the lockfile, read any `--secret-file` and `--secret-stdin` inputs, evaluate the sandbox block and translate command-line paths, then enter the sandbox ([section 7.6](#76-mechanism-and-availability)) and run the flow. Everything that needs host paths happens before the sandbox exists. After that point the interpreter itself cannot see the host outside the mounts.
+**Entering the sandbox.** `weir run` does its work in this order: parse and check the entry file, fetch and verify imported components against the lockfile, read any `--secrets-file` and `--secrets-stdin` inputs, evaluate the sandbox block and translate command-line paths, then enter the sandbox ([section 7.6](#76-mechanism-and-availability)) and run the flow. Everything that needs host paths happens before the sandbox exists. After that point the interpreter itself cannot see the host outside the mounts.
 
 **Locks.** `lock <path>` in a flow names an inside path. A lock file inside the private root, or inside `/tmp`, would exclude nothing, because each run has its own. The lock path must therefore lie under a `rw` mount (`mount "/run/lock" rw` in the example above), or `weir check` reports `E-SANDBOX-LOCK-UNSHARED`.
 
@@ -609,11 +609,13 @@ A file-level `sandbox` block's `in` values generate flags in the same way ([sect
 
 `secret` inputs are never accepted on argv, because argv is visible in `ps` and shell history. They come from:
 
-- the environment variable `WEIR_SECRET_<NAME>`,
-- `--secret-file <name>=<path>` (file mode must not be group/world readable),
-- `--secret-stdin <name>` (reads stdin to EOF).
+- `--secrets-file <path>`, a file of `NAME=value` lines (file mode must not be group/world readable; the option can be repeated),
+- `--secrets-stdin`, which prompts for each secret not in a file, with echo off (Enter on an empty answer uses the environment variable, if it is set), when stdin is a terminal, and otherwise reads `NAME=value` lines to EOF,
+- the environment variable `WEIR_SECRET_<NAME>`.
 
-Supplying a `secret` as `--token x` is exit 2 with a message that names these alternatives.
+`NAME` is the input name in upper case. A line in a file or feed has the form of an environment file: blank lines and `#` comments are skipped, an `export ` prefix is allowed, and a value in matching quotes loses them. There is no interpolation or escaping.
+
+If more than one is given, the order is file, then stdin, then the environment variable. A secret that has none of them is exit 2, and so is supplying one as `--token x`; both messages name these alternatives. The [Secrets page](secrets.md) covers this from the user's side.
 
 ### 11.3 Output channels
 

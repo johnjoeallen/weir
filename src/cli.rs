@@ -10,7 +10,7 @@ use crate::loader::{load, Program};
 use crate::mounts::{normalize, Mounts};
 use crate::value::{parse_duration, Value};
 use std::collections::HashMap;
-use std::io::Read as _;
+use std::io::{Read as _, Write as _};
 use std::rc::Rc;
 
 /// Mirrors `revision` in Cargo.toml; scripts/build-deb.sh bumps both after each package build.
@@ -42,8 +42,8 @@ run options:
   --out <name>         print one named output as raw text; `print` goes to stderr
   --ro <inside-path>   turn a rw mount into ro for this run
   --deny-exec <name>   refuse to start a program for this run
-  --secret-file <name>=<path>   read a `secret` input from a file (mode 0600)
-  --secret-stdin <name>         read a `secret` input from stdin
+  --secrets-file <path>   read `secret` inputs from a file of NAME=value lines (mode 0600); repeatable
+  --secrets-stdin         read `secret` inputs from stdin: NAME=value lines, or a prompt for each one on a terminal
   --sandbox <mode>     required (the default), auto or off; the environment variable WEIR_SANDBOX sets it too
   --no-sandbox         the same as --sandbox off (see docs/DESIGN.md 7.6)
   --help               show the options a script generates from its inputs
@@ -351,8 +351,8 @@ struct RunFlags {
     sandbox: Option<SandboxMode>,
     ro: Vec<String>,
     deny_exec: Vec<String>,
-    secret_files: Vec<(String, String)>,
-    secret_stdin: Vec<String>,
+    secret_files: Vec<String>,
+    secret_stdin: bool,
     help: bool,
 }
 
@@ -530,14 +530,8 @@ fn cmd_run(args: &[String]) -> i32 {
             "out" => flags.out = Some(value!()),
             "ro" => flags.ro.push(value!()),
             "deny-exec" => flags.deny_exec.push(value!()),
-            "secret-file" => {
-                let v = value!();
-                match v.split_once('=') {
-                    Some((n, p)) => flags.secret_files.push((n.to_string(), p.to_string())),
-                    None => return usage_err("`--secret-file` takes <name>=<path>".into()),
-                }
-            }
-            "secret-stdin" => flags.secret_stdin.push(value!()),
+            "secrets-file" => flags.secret_files.push(value!()),
+            "secrets-stdin" => flags.secret_stdin = true,
             "help" => flags.help = true,
             _ => {
                 // an input of the flow, or of the sandbox block
@@ -551,7 +545,7 @@ fn cmd_run(args: &[String]) -> i32 {
                 } else if let Some(s) = specs.iter().find(|s| norm_flag(&s.name) == base) {
                     (s, &mut given)
                 } else {
-                    let mut valid: Vec<String> = ["--confirm", "--plan", "--json", "--out", "--ro", "--deny-exec", "--secret-file", "--secret-stdin", "--sandbox", "--no-sandbox", "--help"]
+                    let mut valid: Vec<String> = ["--confirm", "--plan", "--json", "--out", "--ro", "--deny-exec", "--secrets-file", "--secrets-stdin", "--sandbox", "--no-sandbox", "--help"]
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
@@ -561,10 +555,9 @@ fn cmd_run(args: &[String]) -> i32 {
                 if matches!(strip_opt(&spec.ty), Ty::Secret) {
                     return usage_err(format!(
                         "`--{name}` is a secret and is never accepted on the command line (it would show in `ps` and shell history); \
-                         use the environment variable WEIR_SECRET_{}, `--secret-file {}=<path>`, or `--secret-stdin {}`",
+                         use `--secrets-file <path>` with a line {}=..., `--secrets-stdin`, or the environment variable WEIR_SECRET_{}",
                         spec.name.to_uppercase(),
-                        spec.name,
-                        spec.name
+                        spec.name.to_uppercase()
                     ));
                 }
                 let spec_name = spec.name.clone();
@@ -657,24 +650,28 @@ fn cmd_run(args: &[String]) -> i32 {
     }
 
     // Flow inputs.
+    let secret_names: Vec<(String, bool)> =
+        specs.iter().filter(|s| matches!(strip_opt(&s.ty), Ty::Secret)).map(|s| (s.name.clone(), s.ty.is_optional())).collect();
+    let secrets = match SecretSources::load(&flags, &secret_names) {
+        Ok(x) => x,
+        Err(e) => return usage_err(e),
+    };
     let mut inputs: Vec<(String, Value)> = Vec::new();
     for s in &specs {
         let secret = matches!(strip_opt(&s.ty), Ty::Secret);
         if secret {
-            match read_secret(&s.name, &flags) {
-                Ok(Some(v)) => inputs.push((s.name.clone(), v)),
-                Ok(None) => {
+            match secrets.get(&s.name) {
+                Some(v) => inputs.push((s.name.clone(), v)),
+                None => {
                     if !s.ty.is_optional() {
                         return usage_err(format!(
-                            "the secret input `{}` has no value; set WEIR_SECRET_{}, or pass `--secret-file {}=<path>` or `--secret-stdin {}`",
+                            "the secret input `{}` has no value; put {}=... in a file and pass `--secrets-file <path>`, pass `--secrets-stdin`, or set WEIR_SECRET_{}",
                             s.name,
                             s.name.to_uppercase(),
-                            s.name,
-                            s.name
+                            s.name.to_uppercase()
                         ));
                     }
                 }
-                Err(e) => return usage_err(e),
             }
             continue;
         }
@@ -863,28 +860,134 @@ fn print_flow_help(file: &str, flow: &Flow, entry: &File) {
     println!("\nrun options: --confirm --plan --json --out <name> --ro <path> --deny-exec <name> --sandbox <mode>");
 }
 
-fn read_secret(name: &str, flags: &RunFlags) -> Result<Option<Value>, String> {
-    use std::os::unix::fs::PermissionsExt;
-    if let Some((_, path)) = flags.secret_files.iter().find(|(n, _)| n == name) {
-        let meta = std::fs::metadata(path).map_err(|e| format!("--secret-file {name}={path}: {e}"))?;
-        if meta.permissions().mode() & 0o077 != 0 {
-            return Err(format!(
-                "--secret-file {name}={path}: the file is readable by group or others (mode {:o}); run `chmod 600 {path}`",
-                meta.permissions().mode() & 0o777
-            ));
+/// Where `secret` inputs come from, looked up by input name: the `--secrets-file` files, then
+/// `--secrets-stdin` (a feed, or a prompt for each secret no file gave), then the environment variable `WEIR_SECRET_<NAME>`.
+struct SecretSources {
+    files: HashMap<String, String>,
+    stdin: HashMap<String, String>,
+}
+
+impl SecretSources {
+    /// `wanted` lists the script's secret inputs and whether each is optional.
+    fn load(flags: &RunFlags, wanted: &[(String, bool)]) -> Result<SecretSources, String> {
+        use std::io::IsTerminal;
+        use std::os::unix::fs::PermissionsExt;
+        let mut files: HashMap<String, String> = HashMap::new();
+        for path in &flags.secret_files {
+            let meta = std::fs::metadata(path).map_err(|e| format!("--secrets-file {path}: {e}"))?;
+            if meta.permissions().mode() & 0o077 != 0 {
+                return Err(format!(
+                    "--secrets-file {path}: the file is readable by group or others (mode {:o}); run `chmod 600 {path}`",
+                    meta.permissions().mode() & 0o777
+                ));
+            }
+            let text = std::fs::read_to_string(path).map_err(|e| format!("--secrets-file {path}: {e}"))?;
+            for (k, v) in parse_env_text(&text).map_err(|e| format!("--secrets-file {path}: {e}"))? {
+                files.entry(k).or_insert(v);
+            }
         }
-        let text = std::fs::read_to_string(path).map_err(|e| format!("--secret-file {name}={path}: {e}"))?;
-        return Ok(Some(Value::Secret(Rc::from(text.trim_end_matches('\n')))));
+        let mut stdin: HashMap<String, String> = HashMap::new();
+        if flags.secret_stdin {
+            if std::io::stdin().is_terminal() {
+                for (name, optional) in wanted {
+                    let key = name.to_uppercase();
+                    if files.contains_key(&key) {
+                        continue;
+                    }
+                    let var = format!("WEIR_SECRET_{key}");
+                    let label = if std::env::var(&var).is_ok() {
+                        format!("{name} (Enter to use {var}): ")
+                    } else if *optional {
+                        format!("{name} (optional, Enter to skip): ")
+                    } else {
+                        format!("{name}: ")
+                    };
+                    let v = prompt_hidden(&label).map_err(|e| format!("--secrets-stdin: {e}"))?;
+                    if !v.is_empty() {
+                        stdin.insert(key, v);
+                    }
+                }
+            } else {
+                let mut text = String::new();
+                std::io::stdin().read_to_string(&mut text).map_err(|e| format!("--secrets-stdin: {e}"))?;
+                stdin = parse_env_text(&text).map_err(|e| format!("--secrets-stdin: {e}"))?;
+            }
+        }
+        Ok(SecretSources { files, stdin })
     }
-    if flags.secret_stdin.iter().any(|n| n == name) {
-        let mut s = String::new();
-        std::io::stdin().read_to_string(&mut s).map_err(|e| format!("--secret-stdin {name}: {e}"))?;
-        return Ok(Some(Value::Secret(Rc::from(s.trim_end_matches('\n')))));
+
+    fn get(&self, name: &str) -> Option<Value> {
+        let key = name.to_uppercase();
+        let found = self.files.get(&key).or_else(|| self.stdin.get(&key)).cloned().or_else(|| std::env::var(format!("WEIR_SECRET_{key}")).ok());
+        found.map(|v| Value::Secret(Rc::from(v.as_str())))
     }
-    if let Ok(v) = std::env::var(format!("WEIR_SECRET_{}", name.to_uppercase())) {
-        return Ok(Some(Value::Secret(Rc::from(v.as_str()))));
+}
+
+/// Parse `NAME=value` lines, as in an environment file: blank lines and `#` comments are skipped, `export `
+/// is allowed, and a value in matching single or double quotes loses them. There is no interpolation
+/// or escaping. The error names the line but never shows its text, which may hold a secret.
+fn parse_env_text(text: &str) -> Result<HashMap<String, String>, String> {
+    let mut out = HashMap::new();
+    for (n, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
+        let Some((k, v)) = line.split_once('=') else {
+            return Err(format!("line {}: expected NAME=value", n + 1));
+        };
+        let k = k.trim();
+        if k.is_empty() || k.starts_with(|c: char| c.is_ascii_digit()) || !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(format!("line {}: `{k}` is not a valid name (letters, digits and _)", n + 1));
+        }
+        let v = v.trim();
+        let v = match (v.chars().next(), v.chars().last()) {
+            (Some(a), Some(b)) if v.len() >= 2 && a == b && (a == '"' || a == '\'') => &v[1..v.len() - 1],
+            _ => v,
+        };
+        out.insert(k.to_string(), v.to_string());
     }
-    Ok(None)
+    Ok(out)
+}
+
+/// Read one line from the terminal with echo off. The prompt goes to stderr.
+fn prompt_hidden(prompt: &str) -> Result<String, String> {
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Termios {
+        iflag: u32,
+        oflag: u32,
+        cflag: u32,
+        lflag: u32,
+        line: u8,
+        cc: [u8; 32],
+        ispeed: u32,
+        ospeed: u32,
+    }
+    extern "C" {
+        fn tcgetattr(fd: i32, t: *mut Termios) -> i32;
+        fn tcsetattr(fd: i32, how: i32, t: *const Termios) -> i32;
+    }
+    const ECHO: u32 = 0o10;
+    const TCSAFLUSH: i32 = 2;
+    eprint!("{prompt}");
+    let _ = std::io::stderr().flush();
+    let mut saved = Termios { iflag: 0, oflag: 0, cflag: 0, lflag: 0, line: 0, cc: [0; 32], ispeed: 0, ospeed: 0 };
+    let hidden = unsafe { tcgetattr(0, &mut saved) } == 0;
+    if hidden {
+        let mut quiet = saved;
+        quiet.lflag &= !ECHO;
+        unsafe { tcsetattr(0, TCSAFLUSH, &quiet) };
+    }
+    let mut line = String::new();
+    let read = std::io::stdin().read_line(&mut line);
+    if hidden {
+        unsafe { tcsetattr(0, TCSAFLUSH, &saved) };
+        eprintln!();
+    }
+    read.map_err(|e| e.to_string())?;
+    Ok(line.trim_end_matches(['\n', '\r']).to_string())
 }
 
 /// Convert raw flag text into a value of the declared type. `mounts` translates host paths;

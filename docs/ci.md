@@ -37,8 +37,9 @@ any runner. `weir test` stubs every program, so it runs nothing real.
 - **Return codes.** 0 is success and 1 is a failed flow. 2 is a usage error and 3 means
   `weir check` found errors. 4 means a capability was denied, including a sandbox that
   could not be created. A step fails on any non-zero code, and the number says why.
-- **Secrets.** A `secret` input is read from `WEIR_SECRET_<NAME>`, `--secret-file` or
-  `--secret-stdin`, never from an option, so it doesn't appear in the process list.
+- **Secrets.** A `secret` input is read from `WEIR_SECRET_<NAME>`, `--secrets-file` or
+  `--secrets-stdin`, never from an option, so it doesn't appear in the process list.
+  See [Secrets](secrets.md).
 - **No terminal.** Steps marked `confirmable` are skipped unless `--confirm` is given, and
   `--plan` prints what would happen without running it.
 - **Machine-readable results.** `--json` prints one document with the outputs, the

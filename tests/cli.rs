@@ -118,6 +118,69 @@ test "a call no stub matches fails" {
 }
 
 #[test]
+fn secrets_come_from_a_file_a_feed_or_the_environment_in_that_order() {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt;
+    let p = script(
+        r#"tool show {
+  program "sh"
+  in a: secret
+  in b: secret
+  env {
+    SA = a
+    SB = b
+  }
+  args ["-c", "echo $SA $SB"]
+  takes none
+  yields lines
+}
+main flow f {
+  in a: secret
+  in b: secret
+  out r: string
+  set r = first(of: show(a: a, b: b))
+}
+"#,
+    );
+    let path = p.to_str().unwrap();
+    let file = p.with_file_name("keys.env");
+    std::fs::write(&file, "# keys\nexport A=\"file a\"\nOTHER=1\n").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let run = |args: &[&str], feed: &str, env: &[(&str, &str)]| {
+        let mut c = weir();
+        c.args(["run", path, "f", "--sandbox", "off", "--out", "r"]).args(args);
+        c.env_remove("WEIR_SECRET_A").env_remove("WEIR_SECRET_B");
+        for (k, v) in env {
+            c.env(k, v);
+        }
+        let mut child = c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        child.stdin.take().unwrap().write_all(feed.as_bytes()).unwrap();
+        let o = child.wait_with_output().unwrap();
+        (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
+    };
+    let f = file.to_str().unwrap();
+    // file for one, environment for the other; the file wins over a feed and the environment
+    let (code, out, err) = run(&["--secrets-file", f], "A=feed a\nB=feed b\n", &[("WEIR_SECRET_A", "env a"), ("WEIR_SECRET_B", "env b")]);
+    assert_eq!((code, out.trim()), (0, "file a env b"), "{err}");
+    // a feed beats the environment, and a name it lacks falls back to the environment
+    let (code, out, err) = run(&["--secrets-stdin"], "A=feed a\n", &[("WEIR_SECRET_A", "env a"), ("WEIR_SECRET_B", "env b")]);
+    assert_eq!((code, out.trim()), (0, "feed a env b"), "{err}");
+    // a missing secret is a usage error that names the sources
+    let (code, _, err) = run(&[], "", &[("WEIR_SECRET_A", "env a")]);
+    assert_eq!(code, 2);
+    assert!(err.contains("--secrets-file") && err.contains("WEIR_SECRET_B"), "{err}");
+    // a bad line is reported by number, without its text
+    let (code, _, err) = run(&["--secrets-stdin"], "A=1\nhunter2\n", &[]);
+    assert_eq!(code, 2);
+    assert!(err.contains("line 2") && !err.contains("hunter2"), "{err}");
+    // a file others can read is refused
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let (code, _, err) = run(&["--secrets-file", f], "", &[]);
+    assert_eq!(code, 2);
+    assert!(err.contains("chmod 600"), "{err}");
+}
+
+#[test]
 fn design_document_examples_check_clean() {
     // The two worked examples in the design (sections 13 and 14) are the language's own spec.
     let doc = std::fs::read_to_string(manifest("docs/DESIGN.md")).unwrap();

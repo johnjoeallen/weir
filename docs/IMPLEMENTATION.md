@@ -2,7 +2,7 @@
 
 This describes the reference interpreter in `src/`, measured against [DESIGN.md](DESIGN.md). It is Rust with no dependencies, and Linux is the only platform on which it has been run.
 
-Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 35 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
+Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 36 integration tests (`tests/cli.rs`) that drive the real binary. The integration tests include the two worked examples in the design document, which must check clean, and a sandbox test that proves what a program inside can and cannot see. That test is skipped, not failed, on a host that cannot create the sandbox.
 
 ## What is built
 
@@ -17,7 +17,7 @@ Tests: `cargo test` runs 21 unit tests (`src/tests.rs`) and 35 integration tests
 | 8. Calls | Named arguments only; `W-DEFAULT-ARG` for literal defaults, with `// weir:allow CODE`. |
 | 9. Pipelines | `lines map filter take unique count count_by sort_by`, declared tools as stages, `it`. |
 | 10. Components | Local `use "./path.weir"` and `use "./path.weir#flow"`. Private flows are not importable. |
-| 11. CLI | Flags generated from inputs, `--help`, `--confirm`, `--plan`, `--json`, `--out`, secrets from `WEIR_SECRET_<NAME>`, `--secret-file` (mode checked) and `--secret-stdin`; a secret on argv is exit 2. |
+| 11. CLI | Flags generated from inputs, `--help`, `--confirm`, `--plan`, `--json`, `--out`, secrets from `--secrets-file` (env-file lines, mode checked), `--secrets-stdin` (a feed, or a no-echo prompt on a terminal) and `WEIR_SECRET_<NAME>`; a secret on argv is exit 2. |
 | 12. Testing | `fixture dir`, `stub`, `expect`, `run <flow>(...)`. |
 | 7.3.1 Scoped views | `within <items> { ... }` as a statement or a value, `return`, nesting by intersection, built-ins held to the view (`exists` is `false`), `E-WITHIN-NO-RETURN`, `E-FN-IMPURE`. A tool writes `see` lines directly; the old `sandbox { see }` form in a tool is `E-TOOL-SANDBOX`. |
 | 7.1.1 Explicit mounts | `mount ... explicit`: held out of the default view, reached only by a `see` line or `within` header that names it. Built-ins get a `CapabilityError` (`exists` is `false`). |

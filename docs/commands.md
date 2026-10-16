@@ -125,6 +125,11 @@ let info = within system, "/etc" ro {
 Inside the block `/var/log` doesn't exist for any program or built-in, even though the script mounts it.
 See [The sandbox](sandbox.md#narrowing-part-of-a-flow-within).
 
+## Secrets
+
+A tool gets a `secret` input through its `env` block or its stdin, never through `args`.
+See [Secrets](secrets.md).
+
 ## Testing
 
 A test never starts a real program. It gives each tool the lines it would yield:

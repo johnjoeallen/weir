@@ -57,14 +57,14 @@ Each input a flow declares becomes a command-line option of the same name.
 | `--out <name>` | print one named output as raw text; `print` goes to stderr |
 | `--ro <inside-path>` | turn a `rw` mount into `ro` for this run |
 | `--deny-exec <name>` | refuse to start a program for this run |
-| `--secret-file <name>=<path>` | read a `secret` input from a file (mode 0600) |
-| `--secret-stdin <name>` | read a `secret` input from stdin |
+| `--secrets-file <path>` | read `secret` inputs from a file of `NAME=value` lines (mode 0600); can be given more than once |
+| `--secrets-stdin` | read `secret` inputs from stdin: `NAME=value` lines, or a prompt for each one when stdin is a terminal |
 | `--sandbox <mode>` | `required` (the default), `auto` or `off`; see [the sandbox](sandbox.md#when-the-sandbox-cannot-be-created). `WEIR_SANDBOX` sets it too |
 | `--no-sandbox` | the same as `--sandbox off` |
 | `--help` | show the options a script generates from its inputs |
 
 A `secret` input is never accepted on the command line. It comes from
-`WEIR_SECRET_<NAME>`, `--secret-file` or `--secret-stdin`.
+`--secrets-file`, `--secrets-stdin` or `WEIR_SECRET_<NAME>`, in that order. See [Secrets](secrets.md).
 
 ## Return codes
 

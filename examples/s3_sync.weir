@@ -2,8 +2,15 @@
 //
 // s3_sync.weir: sync a folder to an S3 bucket.
 //
-//   WEIR_SECRET_ACCESS_KEY_ID=... WEIR_SECRET_SECRET_ACCESS_KEY=... \
-//     ./s3_sync.weir --source ./public --bucket my-bucket --dest site --delete
+//   ./s3_sync.weir --source ./public --bucket my-bucket --dest site --delete --secrets-file ./aws.env
+//
+// where aws.env (mode 0600) holds the two keys:
+//   ACCESS_KEY_ID=...
+//   SECRET_ACCESS_KEY=...
+// or pass --secrets-stdin to be asked for each one.
+//
+// The keys can also come from WEIR_SECRET_ACCESS_KEY_ID and WEIR_SECRET_SECRET_ACCESS_KEY (as in CI),
+// but never from an option; see docs/secrets.md.
 //
 // A port of jakejarvis/s3-sync-action's entrypoint.sh (56 lines of sh). Differences:
 //   - the four "X is not set. Quitting." checks are required inputs;
